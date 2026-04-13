@@ -1,0 +1,20 @@
+node_modules/
+out/
+dist/
+.DS_Store
+*.tsbuildinfo
+.env
+.env.local
+
+# Electron builder output
+release/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
