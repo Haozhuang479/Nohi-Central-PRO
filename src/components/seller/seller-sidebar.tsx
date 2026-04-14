@@ -253,6 +253,31 @@ export function SellerSidebar() {
                 </SidebarMenuButton>
               </SidebarMenuItem>
 
+              {/* ── Skills ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === '/seller/skills'}
+                  tooltip="Skills"
+                >
+                  <Link to="/seller/skills">
+                    <span>Skills</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* ── MCP Servers ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === '/seller/mcp'}
+                  tooltip="MCP Servers"
+                >
+                  <Link to="/seller/mcp">
+                    <span>MCP Servers</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
 
             </SidebarMenu>
           </SidebarGroupContent>

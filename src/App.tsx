@@ -23,6 +23,8 @@ const OnboardingPage = lazy(() => import('@/pages/onboarding/page'))
 const SellerHomePage = lazy(() => import('@/pages/seller/home/page'))
 const SettingsPage = lazy(() => import('@/pages/seller/settings/page'))
 const AnalyticsPage = lazy(() => import('@/pages/seller/analytics/page'))
+const SkillsPage = lazy(() => import('@/pages/seller/skills/page'))
+const McpPage = lazy(() => import('@/pages/seller/mcp/page'))
 
 // Catalog
 const OwnSupplyPage = lazy(() => import('@/pages/seller/catalog/own-supply/page'))
@@ -240,6 +242,16 @@ export default function App() {
 
                 {/* Top-level pages */}
                 <Route path="analytics" element={<AnalyticsPage />} />
+                <Route path="skills" element={<SkillsPage />} />
+                <Route
+                  path="mcp"
+                  element={
+                    <McpPage
+                      settings={settings!}
+                      onSave={handleSettingsSave}
+                    />
+                  }
+                />
                 <Route
                   path="settings"
                   element={

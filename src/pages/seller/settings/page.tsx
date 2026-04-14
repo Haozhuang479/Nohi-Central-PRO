@@ -14,7 +14,7 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/component
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
-import type { NohiSettings, Skill } from '../../../../electron/main/engine/types'
+import type { NohiSettings } from '../../../../electron/main/engine/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────
 
@@ -350,190 +350,6 @@ function ProviderCard({
 }
 
 // ─── Main page ───────────────────────────────────────────────────────────
-
-// ─── Skills section (with CRUD) ──────────────────────────────────────────
-
-function SkillsSection({ language }: { language: string }) {
-  const [skills, setSkills] = useState<Skill[]>([])
-  const [editing, setEditing] = useState<{ id?: string; name: string; description: string; trigger: string; content: string } | null>(null)
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.nohi?.skills) {
-      window.nohi.skills.list().then(setSkills).catch(() => {})
-    }
-  }, [])
-
-  const toggle = useCallback(async (id: string, enabled: boolean) => {
-    if (window.nohi?.skills) setSkills(await window.nohi.skills.toggle(id, enabled))
-  }, [])
-
-  const saveSkill = useCallback(async () => {
-    if (!editing || !window.nohi?.skills) return
-    if (editing.id) {
-      setSkills(await window.nohi.skills.update({ id: editing.id, name: editing.name, description: editing.description, trigger: editing.trigger, content: editing.content }))
-    } else {
-      setSkills(await window.nohi.skills.create({ name: editing.name, description: editing.description, trigger: editing.trigger, content: editing.content }))
-    }
-    setEditing(null)
-    toast.success(language === 'zh' ? '已保存' : 'Saved')
-  }, [editing, language])
-
-  const deleteSkill = useCallback(async (id: string) => {
-    if (window.nohi?.skills) {
-      setSkills(await window.nohi.skills.delete(id))
-      toast.success(language === 'zh' ? '已删除' : 'Deleted')
-    }
-  }, [language])
-
-  return (
-    <SettingsSection title={language === 'zh' ? 'Skills（斜杠命令）' : 'Skills (Slash Commands)'}>
-      <div className="p-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            {language === 'zh'
-              ? '输入 / 触发 Skills。自定义 Skills 位于 ~/.nohi/skills/。'
-              : 'Type / to trigger. Custom skills live in ~/.nohi/skills/.'}
-          </p>
-          <Button size="sm" variant="outline" className="text-xs" onClick={() => setEditing({ name: '', description: '', trigger: '', content: '' })}>
-            {language === 'zh' ? '+ 新建' : '+ Create'}
-          </Button>
-        </div>
-
-        {/* Skill editor */}
-        {editing && (
-          <div className="rounded-xl border border-border p-4 space-y-3 bg-muted/20">
-            <Input placeholder="Name" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} className="text-xs" />
-            <Input placeholder="Description" value={editing.description} onChange={(e) => setEditing({ ...editing, description: e.target.value })} className="text-xs" />
-            <Input placeholder="Trigger keywords (pipe-separated)" value={editing.trigger} onChange={(e) => setEditing({ ...editing, trigger: e.target.value })} className="text-xs" />
-            <textarea placeholder="Skill prompt content..." value={editing.content} onChange={(e) => setEditing({ ...editing, content: e.target.value })} className="w-full min-h-[120px] rounded-lg border border-input bg-background p-3 text-xs font-mono resize-y" />
-            <div className="flex gap-2">
-              <Button size="sm" onClick={saveSkill} disabled={!editing.name.trim() || !editing.content.trim()}>{language === 'zh' ? '保存' : 'Save'}</Button>
-              <Button size="sm" variant="outline" onClick={() => setEditing(null)}>{language === 'zh' ? '取消' : 'Cancel'}</Button>
-            </div>
-          </div>
-        )}
-
-        {skills.length === 0 ? (
-          <p className="text-xs text-muted-foreground italic">{language === 'zh' ? '暂无 Skills' : 'No skills found'}</p>
-        ) : (
-          <div className="space-y-2">
-            {skills.map((skill) => (
-              <div key={skill.id} className="flex items-center gap-3 rounded-xl p-3 bg-muted/40">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground">/{skill.name}</p>
-                  <p className="text-xs text-muted-foreground truncate">{skill.description}</p>
-                </div>
-                <Badge variant="secondary" className="text-[10px] shrink-0">
-                  {skill.source === 'builtin' ? (language === 'zh' ? '内置' : 'Built-in') : (language === 'zh' ? '自定义' : 'Custom')}
-                </Badge>
-                {skill.source === 'custom' && (
-                  <>
-                    <button type="button" onClick={() => setEditing({ id: skill.id, name: skill.name, description: skill.description, trigger: skill.trigger, content: skill.content })} className="text-[10px] text-muted-foreground hover:text-foreground">Edit</button>
-                    <button type="button" onClick={() => deleteSkill(skill.id)} className="text-[10px] text-destructive hover:text-destructive/80">Del</button>
-                  </>
-                )}
-                <Switch checked={skill.enabled} onCheckedChange={(v) => toggle(skill.id, v)} />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </SettingsSection>
-  )
-}
-
-// ─── MCP servers section (with CRUD) ──────────────────────────────────────
-
-function McpSection({ settings, onSave, language }: { settings: NohiSettings; onSave: (s: NohiSettings) => void; language: string }) {
-  const servers = settings.mcpServers ?? []
-  const [editing, setEditing] = useState<{ id?: string; name: string; command: string; args: string; enabled: boolean } | null>(null)
-  const [statuses, setStatuses] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    if (window.nohi?.mcp) window.nohi.mcp.status().then(setStatuses).catch(() => {})
-  }, [servers])
-
-  const saveServer = useCallback(() => {
-    if (!editing) return
-    const newServer = {
-      id: editing.id || crypto.randomUUID(),
-      name: editing.name,
-      command: editing.command,
-      args: editing.args.split(/\s+/).filter(Boolean),
-      enabled: editing.enabled,
-    }
-    const updated = editing.id
-      ? servers.map((s) => s.id === editing.id ? newServer : s)
-      : [...servers, newServer]
-    onSave({ ...settings, mcpServers: updated })
-    setEditing(null)
-    toast.success(language === 'zh' ? 'MCP 服务器已保存' : 'MCP server saved')
-  }, [editing, servers, settings, onSave, language])
-
-  const deleteServer = useCallback((id: string) => {
-    onSave({ ...settings, mcpServers: servers.filter((s) => s.id !== id) })
-    toast.success(language === 'zh' ? '已删除' : 'Deleted')
-  }, [servers, settings, onSave, language])
-
-  const toggleServer = useCallback((id: string, enabled: boolean) => {
-    onSave({ ...settings, mcpServers: servers.map((s) => s.id === id ? { ...s, enabled } : s) })
-  }, [servers, settings, onSave])
-
-  return (
-    <SettingsSection title={language === 'zh' ? 'MCP 服务器' : 'MCP Servers'}>
-      <div className="p-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">
-            {language === 'zh'
-              ? 'MCP 服务器为 AI 提供额外工具。'
-              : 'MCP servers extend the AI with additional tools.'}
-          </p>
-          <Button size="sm" variant="outline" className="text-xs" onClick={() => setEditing({ name: '', command: '', args: '', enabled: true })}>
-            {language === 'zh' ? '+ 添加' : '+ Add Server'}
-          </Button>
-        </div>
-
-        {editing && (
-          <div className="rounded-xl border border-border p-4 space-y-3 bg-muted/20">
-            <Input placeholder="Server name" value={editing.name} onChange={(e) => setEditing({ ...editing, name: e.target.value })} className="text-xs" />
-            <Input placeholder="Command (e.g. npx)" value={editing.command} onChange={(e) => setEditing({ ...editing, command: e.target.value })} className="text-xs font-mono" />
-            <Input placeholder="Arguments (space-separated)" value={editing.args} onChange={(e) => setEditing({ ...editing, args: e.target.value })} className="text-xs font-mono" />
-            <div className="flex items-center gap-2">
-              <Switch checked={editing.enabled} onCheckedChange={(v) => setEditing({ ...editing, enabled: v })} />
-              <span className="text-xs text-muted-foreground">{language === 'zh' ? '启用' : 'Enabled'}</span>
-            </div>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={saveServer} disabled={!editing.name.trim() || !editing.command.trim()}>{language === 'zh' ? '保存' : 'Save'}</Button>
-              <Button size="sm" variant="outline" onClick={() => setEditing(null)}>{language === 'zh' ? '取消' : 'Cancel'}</Button>
-            </div>
-          </div>
-        )}
-
-        {servers.length === 0 && !editing ? (
-          <p className="text-xs text-muted-foreground italic">{language === 'zh' ? '暂未配置' : 'No MCP servers configured'}</p>
-        ) : (
-          <div className="space-y-2">
-            {servers.map((srv) => (
-              <div key={srv.id} className="flex items-center gap-3 rounded-xl p-3 bg-muted/40">
-                <div className={cn('size-2 rounded-full shrink-0',
-                  statuses[srv.id] === 'connected' ? 'bg-emerald-500' :
-                  statuses[srv.id] === 'error' ? 'bg-red-500' : 'bg-muted-foreground/30'
-                )} />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground">{srv.name}</p>
-                  <p className="text-xs text-muted-foreground font-mono truncate">{srv.command} {srv.args.join(' ')}</p>
-                </div>
-                <button type="button" onClick={() => setEditing({ id: srv.id, name: srv.name, command: srv.command, args: srv.args.join(' '), enabled: srv.enabled })} className="text-[10px] text-muted-foreground hover:text-foreground">Edit</button>
-                <button type="button" onClick={() => deleteServer(srv.id)} className="text-[10px] text-destructive hover:text-destructive/80">Del</button>
-                <Switch checked={srv.enabled} onCheckedChange={(v) => toggleServer(srv.id, v)} />
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </SettingsSection>
-  )
-}
 
 export default function SettingsPage({ settings, onSave }: SettingsPageProps) {
   const { language, setLanguage } = useLanguage()
@@ -997,13 +813,7 @@ export default function SettingsPage({ settings, onSave }: SettingsPageProps) {
         </div>
       </SettingsSection>
 
-      {/* ── 7. Skills (Slash Commands) ─────────────────────────────────── */}
-      <SkillsSection language={language} />
-
-      {/* ── 7. MCP Servers ─────────────────────────────────────────────── */}
-      <McpSection settings={draft} onSave={(s) => { setDraft(s); onSave(s) }} language={language} />
-
-      {/* ── 8. Payment Methods ──────────────────────────────────────────── */}
+      {/* ── 7. Payment Methods ──────────────────────────────────────────── */}
       <SettingsSection title={language === 'zh' ? '支付方式' : 'Payment Methods'}>
         <div className="p-6 space-y-4">
           {/* Saved cards */}
