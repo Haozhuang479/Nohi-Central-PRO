@@ -167,8 +167,8 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
               [
                 { label: language === 'zh' ? '自动化' : 'Automation', to: '/seller' },
                 { label: language === 'zh' ? '连接器' : 'Connectors', to: '/seller/catalog/connectors' },
-                { label: 'MCPs', to: '/seller/mcp' },
-                { label: language === 'zh' ? '技能' : 'Skills', to: '/seller/skills' },
+                { label: 'MCPs', to: '/chat/mcp' },
+                { label: language === 'zh' ? '技能' : 'Skills', to: '/chat/skills' },
               ] as const
             ).map(({ label, to }) => (
               <Link
