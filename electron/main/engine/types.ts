@@ -119,6 +119,10 @@ export interface NohiSettings {
   whisperBinPath?: string
   // Brave Search API key for web search tool
   braveSearchApiKey?: string
+  // Firecrawl API key for advanced web scraping/crawling
+  firecrawlApiKey?: string
+  // Optional self-hosted Firecrawl instance URL (defaults to https://api.firecrawl.dev)
+  firecrawlApiUrl?: string
 }
 
 export interface McpServerConfig {

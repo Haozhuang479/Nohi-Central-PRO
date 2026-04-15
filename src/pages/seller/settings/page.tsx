@@ -813,6 +813,46 @@ export default function SettingsPage({ settings, onSave }: SettingsPageProps) {
         </div>
       </SettingsSection>
 
+      {/* ── 6b. Firecrawl ───────────────────────────────────────────────── */}
+      <SettingsSection title="Firecrawl">
+        <div className="p-6 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            {language === 'zh'
+              ? 'Firecrawl 是高级网页抓取与爬虫服务，支持 JavaScript 渲染、内容提取和全站爬取。获取 API 密钥：firecrawl.dev'
+              : 'Firecrawl provides advanced web scraping with JavaScript rendering, clean content extraction, and full-site crawling. Get an API key at firecrawl.dev'}
+          </p>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+              Firecrawl API Key
+            </label>
+            <div className="flex gap-2">
+              <Input
+                type="password"
+                value={draft.firecrawlApiKey ?? ''}
+                onChange={(e) => patch('firecrawlApiKey', e.target.value || undefined)}
+                placeholder="fc-..."
+                className="flex-1 text-xs font-mono"
+              />
+              <Button size="sm" onClick={() => { onSave(draft); toast.success(language === 'zh' ? '已保存' : 'Saved') }}>
+                {language === 'zh' ? '保存' : 'Save'}
+              </Button>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+              {language === 'zh' ? '自托管实例 URL（可选）' : 'Self-hosted Instance URL (optional)'}
+            </label>
+            <Input
+              type="text"
+              value={draft.firecrawlApiUrl ?? ''}
+              onChange={(e) => patch('firecrawlApiUrl', e.target.value || undefined)}
+              placeholder="https://api.firecrawl.dev"
+              className="text-xs font-mono"
+            />
+          </div>
+        </div>
+      </SettingsSection>
+
       {/* ── 7. Payment Methods ──────────────────────────────────────────── */}
       <SettingsSection title={language === 'zh' ? '支付方式' : 'Payment Methods'}>
         <div className="p-6 space-y-4">
