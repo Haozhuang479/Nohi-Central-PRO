@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } from 'electron'
 import { join } from 'path'
 import { homedir, tmpdir } from 'os'
 import { mkdir, writeFile, unlink, readFile, access } from 'fs/promises'
@@ -77,6 +77,18 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   await mkdir(join(homedir(), '.nohi', 'skills'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'memory'), { recursive: true })
+  await mkdir(join(homedir(), '.nohi', 'images'), { recursive: true })
+
+  // Register custom protocol to serve local images in the renderer
+  protocol.handle('nohi-file', (request) => {
+    const filePath = decodeURIComponent(request.url.replace('nohi-file://', ''))
+    // Only allow serving files from ~/.nohi/images/ or the user's home directory
+    const nohiImages = join(homedir(), '.nohi', 'images')
+    if (!filePath.startsWith(nohiImages) && !filePath.startsWith(homedir())) {
+      return new Response('Forbidden', { status: 403 })
+    }
+    return net.fetch(`file://${filePath}`)
+  })
   setToolkitDir(SHOPIFY_TOOLKIT_DIR)
   await reloadSkills()
 

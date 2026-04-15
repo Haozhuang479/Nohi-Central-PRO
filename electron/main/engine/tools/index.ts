@@ -9,6 +9,7 @@ import { WebSearchTool } from './webSearch'
 import { ProductSearchTool, ProductUploadTool } from './productSearch'
 import { MemoryReadTool, MemoryWriteTool, MemoryDeleteTool } from './memory'
 import { DeepResearchTool } from './deepResearch'
+import { ImageGenerateTool, ImageEditTool } from './imageGenerate'
 import type { ToolDef } from '../types'
 
 export const ALL_TOOLS: ToolDef[] = [
@@ -26,6 +27,8 @@ export const ALL_TOOLS: ToolDef[] = [
   MemoryWriteTool,
   MemoryDeleteTool,
   DeepResearchTool,
+  ImageGenerateTool,
+  ImageEditTool,
 ]
 
 export { BashTool, FileReadTool, FileWriteTool, FileEditTool, GlobTool, GrepTool, WebFetchTool, WebSearchTool, ProductSearchTool, ProductUploadTool }

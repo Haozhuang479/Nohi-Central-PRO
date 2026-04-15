@@ -155,6 +155,20 @@ function ToolBlock({ tool }: { tool: ToolBlockState }) {
               >
                 {tool.isError ? 'Error' : 'Result'}
               </p>
+              {/* Render generated images inline */}
+              {!tool.isError && tool.result.includes('![') && tool.result.includes('file://') && (() => {
+                const match = tool.result.match(/!\[.*?\]\(file:\/\/(.+?)\)/)
+                return match ? (
+                  <div className="my-2">
+                    <img
+                      src={`nohi-file://${match[1]}`}
+                      alt="Generated"
+                      className="max-w-full max-h-[400px] rounded-xl border border-border object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+                    />
+                  </div>
+                ) : null
+              })()}
               <pre
                 className={cn(
                   'text-xs overflow-x-auto rounded p-2 border',
@@ -163,7 +177,7 @@ function ToolBlock({ tool }: { tool: ToolBlockState }) {
                     : 'bg-background/50 border-border/50'
                 )}
               >
-                {tool.result}
+                {tool.result.replace(/!\[.*?\]\(file:\/\/.+?\)\n?/g, '')}
               </pre>
             </div>
           )}
