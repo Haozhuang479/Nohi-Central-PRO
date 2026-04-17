@@ -86,11 +86,11 @@ export async function writeMemory(
   await ensureMemoryDir()
   const now = new Date().toISOString()
   // Generate ID from content first line or use existing
-  const id = existingId ?? content.split('\n')[0]
+  const id = existingId ?? (content.split('\n')[0]
     .replace(/[^a-zA-Z0-9\u4e00-\u9fff]+/g, '-')
     .replace(/^-|-$/g, '')
     .slice(0, 50)
-    .toLowerCase() || `memory-${Date.now()}`
+    .toLowerCase() || `memory-${Date.now()}`)
 
   const filePath = join(MEMORY_DIR, `${id}.md`)
   let created = now

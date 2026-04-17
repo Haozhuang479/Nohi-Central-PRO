@@ -261,36 +261,6 @@ const translations: Record<string, Record<Language, string>> = {
   "settings.apiKey": { en: "API Key", zh: "API 密钥" },
   "settings.defaultModel": { en: "Default Model", zh: "默认模型" },
 
-  // ── Onboarding ────────────────────────────────────────────────────────────────
-  "onboarding.welcome": { en: "Welcome to Nohi Central PRO", zh: "欢迎使用 Nohi Central PRO" },
-  "onboarding.welcomeDesc": {
-    en: "Set up your store in a few simple steps to start selling through AI channels.",
-    zh: "通过几个简单步骤设置您的店铺，开始通过 AI 渠道销售。",
-  },
-  "onboarding.getStarted": { en: "Get Started", zh: "立即开始" },
-  "onboarding.languageStep": { en: "Choose your language", zh: "选择语言" },
-  "onboarding.storeStep": { en: "Connect your store", zh: "连接您的店铺" },
-  "onboarding.apiKeysStep": { en: "Configure AI providers", zh: "配置 AI 提供商" },
-  "onboarding.catalogStep": { en: "Import your catalog", zh: "导入商品目录" },
-  "onboarding.done": { en: "Done", zh: "完成" },
-  "onboarding.skip": { en: "Skip", zh: "跳过" },
-  "onboarding.next": { en: "Next", zh: "下一步" },
-  "onboarding.back": { en: "Back", zh: "上一步" },
-  "onboarding.finish": { en: "Finish Setup", zh: "完成设置" },
-  // legacy onboarding keys
-  "onboarding.language": { en: "Choose Language", zh: "选择语言" },
-  "onboarding.storeInfo": { en: "Your Store", zh: "您的店铺" },
-  "onboarding.aiSetup": { en: "AI Providers", zh: "AI 提供商" },
-  "onboarding.catalog": { en: "Connect Catalog", zh: "连接目录" },
-  "onboarding.enterDashboard": { en: "Enter Dashboard", zh: "进入控制台" },
-  "onboarding.brandName": { en: "Brand Name", zh: "品牌名称" },
-  "onboarding.storeUrl": { en: "Store URL", zh: "店铺 URL" },
-  "onboarding.category": { en: "Category", zh: "品类" },
-  "onboarding.addKeyLater": {
-    en: "You can add API keys later in Settings.",
-    zh: "您可以稍后在设置中添加 API 密钥。",
-  },
-
   // ── Quick Actions ─────────────────────────────────────────────────────────────
   "quickActions.title": { en: "Quick Actions", zh: "快捷操作" },
   "quickActions.syncCatalog": { en: "Sync Catalog", zh: "同步目录" },

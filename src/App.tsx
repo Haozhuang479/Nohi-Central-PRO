@@ -19,7 +19,7 @@ const SellerLayout = lazy(() =>
   import('@/pages/seller/layout').then((m) => ({ default: m.SellerLayout }))
 )
 
-const OnboardingPage = lazy(() => import('@/pages/onboarding/page'))
+// Onboarding removed — users configure API keys in Settings
 
 // Seller pages
 const SellerHomePage = lazy(() => import('@/pages/seller/home/page'))
@@ -121,12 +121,7 @@ export default function App() {
     )
   }
 
-  const hasApiKey =
-    !!(settings?.anthropicApiKey?.trim()) ||
-    !!(settings?.openaiApiKey?.trim()) ||
-    !!(settings?.kimiApiKey?.trim()) ||
-    !!(settings?.minimaxApiKey?.trim()) ||
-    !!(settings?.deepseekApiKey?.trim())
+  // No onboarding gate — always allow access (users configure keys in Settings)
 
   return (
     <LanguageProvider>
@@ -134,32 +129,14 @@ export default function App() {
         <HashRouter>
           <Suspense fallback={<AppSpinner />}>
             <Routes>
-              {/* Onboarding */}
-              <Route
-                path="/onboarding"
-                element={
-                  <OnboardingPage
-                    onComplete={async (s) => {
-                      // Merge onboarding settings with existing defaults (don't wipe workingDir etc.)
-                      const merged = { ...settings, ...s } as NohiSettings
-                      await handleSettingsSave(merged)
-                    }}
-                  />
-                }
-              />
-
               {/* Chat — full-screen standalone AI chat */}
               <Route
                 path="/chat"
                 element={
-                  hasApiKey ? (
-                    <ChatLayout
-                      settings={settings!}
-                      onSettingsSave={handleSettingsSave}
-                    />
-                  ) : (
-                    <Navigate to="/onboarding" replace />
-                  )
+                  <ChatLayout
+                    settings={settings!}
+                    onSettingsSave={handleSettingsSave}
+                  />
                 }
               >
                 <Route index element={<ChatPage settings={settings!} />} />
@@ -179,14 +156,10 @@ export default function App() {
               <Route
                 path="/seller"
                 element={
-                  hasApiKey ? (
-                    <SellerLayout
-                      settings={settings!}
-                      onSettingsSave={handleSettingsSave}
-                    />
-                  ) : (
-                    <Navigate to="/onboarding" replace />
-                  )
+                  <SellerLayout
+                    settings={settings!}
+                    onSettingsSave={handleSettingsSave}
+                  />
                 }
               >
                 {/* Index: home dashboard */}
@@ -275,16 +248,10 @@ export default function App() {
                 />
               </Route>
 
-              {/* Catch-all → chat (or onboarding if no key) */}
+              {/* Catch-all → chat */}
               <Route
                 path="*"
-                element={
-                  hasApiKey ? (
-                    <Navigate to="/chat" replace />
-                  ) : (
-                    <Navigate to="/onboarding" replace />
-                  )
-                }
+                element={<Navigate to="/chat" replace />}
               />
             </Routes>
           </Suspense>
