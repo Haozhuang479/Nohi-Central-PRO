@@ -136,6 +136,9 @@ const TOOL_LABELS: Record<string, string> = {
   memory_delete: 'Delete Memory',
   image_generate: 'Generate Image',
   image_edit: 'Edit Image',
+  todo_write: 'Update Tasks',
+  task: 'Subagent',
+  notebook_edit: 'Edit Notebook',
 }
 
 function toolLabel(name: string): string {
@@ -155,7 +158,41 @@ function toolInputSummary(name: string, input: Record<string, unknown>): string 
     return `"${String(input.query).slice(0, 50)}"`
   if (name === 'firecrawl_crawl' && input.url) return String(input.url).replace(/^https?:\/\//, '').slice(0, 50)
   if (name === 'image_generate' && input.prompt) return String(input.prompt).slice(0, 60)
+  if (name === 'task' && input.description) return String(input.description).slice(0, 60)
+  if (name === 'todo_write' && Array.isArray(input.todos)) return `${(input.todos as unknown[]).length} tasks`
+  if (name === 'notebook_edit' && input.notebook_path) return String(input.notebook_path).split('/').pop() ?? ''
   return ''
+}
+
+// Render todo list as a styled checklist
+function TodoListView({ todos }: { todos: Array<{ content: string; activeForm: string; status: string }> }) {
+  return (
+    <div className="space-y-1.5">
+      {todos.map((t, i) => {
+        const done = t.status === 'completed'
+        const active = t.status === 'in_progress'
+        const display = active ? t.activeForm : t.content
+        return (
+          <div key={i} className="flex items-center gap-2 text-xs">
+            <span className={cn(
+              'inline-flex items-center justify-center size-4 rounded-full border shrink-0',
+              done ? 'bg-emerald-500 border-emerald-500 text-white' :
+              active ? 'border-amber-500 bg-amber-50' : 'border-border bg-background'
+            )}>
+              {done ? '✓' : active ? <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" /> : ''}
+            </span>
+            <span className={cn(
+              done && 'line-through text-muted-foreground/60',
+              active && 'font-medium text-foreground',
+              !done && !active && 'text-foreground/80'
+            )}>
+              {display}
+            </span>
+          </div>
+        )
+      })}
+    </div>
+  )
 }
 
 // ─── Rich result rendering per tool type ───────────────────────────────────
@@ -171,6 +208,11 @@ function ToolResultContent({ tool }: { tool: ToolBlockState }) {
         {result}
       </pre>
     )
+  }
+
+  // todo_write — render the structured todo list
+  if (tool.name === 'todo_write' && Array.isArray(tool.input.todos)) {
+    return <TodoListView todos={tool.input.todos as Array<{ content: string; activeForm: string; status: string }>} />
   }
 
   // Image generation/edit — extract and render inline images
@@ -417,17 +459,42 @@ function MessageView({ role, content, tools, isLastAssistant, onEdit, onRetry }:
 
 function StreamingMessageView({
   text,
+  thinking,
   tools,
 }: {
   text: string
+  thinking?: string
   tools: ToolBlockState[]
 }) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const [thinkingOpen, setThinkingOpen] = useState(false)
   useCodeCopyHandler(containerRef)
 
   return (
     <div className="flex items-start px-4 py-1.5">
       <div className="flex-1 min-w-0" ref={containerRef}>
+        {/* Thinking display (when extended thinking is active) */}
+        {thinking && (
+          <div className="rounded-xl border border-purple-200/50 bg-purple-50/20 my-2 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setThinkingOpen((v) => !v)}
+              className="flex items-center gap-2 w-full text-left px-3 py-2 text-xs text-purple-700 hover:bg-purple-50/40 transition-colors"
+            >
+              <span className="font-medium">Thinking</span>
+              <span className="text-purple-400/60">·</span>
+              <span className="text-purple-500/80 italic truncate flex-1">
+                {thinking.slice(-80)}
+              </span>
+              <span className="text-[10px] opacity-50">{thinkingOpen ? '▾' : '▸'}</span>
+            </button>
+            {thinkingOpen && (
+              <div className="px-3 pb-3 text-xs text-purple-900/80 italic whitespace-pre-wrap font-mono max-h-[200px] overflow-y-auto">
+                {thinking}
+              </div>
+            )}
+          </div>
+        )}
         {tools.map((tool) => (
           <ToolBlock key={tool.id} tool={tool} />
         ))}
@@ -562,6 +629,7 @@ export default function ChatPage({ settings }: Props) {
   const [showProviderMenu, setShowProviderMenu] = useState(false)
   const [showModelMenu, setShowModelMenu] = useState(false)
   const [streamingText, setStreamingText] = useState('')
+  const [thinkingText, setThinkingText] = useState('')
 
   // Slash command state
   const [skills, setSkills] = useState<Skill[]>([])
@@ -851,6 +919,7 @@ export default function ChatPage({ settings }: Props) {
       setInput('')
       setAttachedImages([])
       setStreamingText('')
+      setThinkingText('')
       setShowSlashMenu(false)
 
       // Generate a roundId for this send; tools will be stored under it
@@ -871,6 +940,8 @@ export default function ChatPage({ settings }: Props) {
           if (event.type === 'text_delta') {
             assistantText += event.delta
             setStreamingText(assistantText)
+          } else if (event.type === 'thinking_delta') {
+            setThinkingText((prev) => prev + event.delta)
           } else if (event.type === 'tool_start') {
             const newTool: ToolBlockState = {
               id: event.id,
@@ -1309,16 +1380,21 @@ export default function ChatPage({ settings }: Props) {
               m.role === 'assistant' &&
               (typeof m.content === 'string' ? m.content : '') === streamingText
           ) && (
-            <StreamingMessageView text={streamingText} tools={currentRoundTools} />
+            <StreamingMessageView text={streamingText} thinking={thinkingText} tools={currentRoundTools} />
           )}
 
         {/* Tool activity only (no text yet) */}
         {isRunning && !streamingText && currentRoundTools.length > 0 && (
-          <StreamingMessageView text="" tools={currentRoundTools} />
+          <StreamingMessageView text="" thinking={thinkingText} tools={currentRoundTools} />
+        )}
+
+        {/* Thinking only (no tools, no text yet) */}
+        {isRunning && !streamingText && currentRoundTools.length === 0 && thinkingText && (
+          <StreamingMessageView text="" thinking={thinkingText} tools={[]} />
         )}
 
         {/* Typing indicator — running with no text and no tools yet */}
-        {isRunning && !streamingText && currentRoundTools.length === 0 && (
+        {isRunning && !streamingText && currentRoundTools.length === 0 && !thinkingText && (
           <div className="flex items-start px-4 py-1.5">
             <div className="rounded-2xl bg-muted px-4 py-3">
               <div className="flex gap-1.5 items-center">

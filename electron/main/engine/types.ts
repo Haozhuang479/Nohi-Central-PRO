@@ -53,8 +53,10 @@ export interface ToolCallOpts {
 
 export type AgentEvent =
   | { type: 'text_delta'; delta: string }
+  | { type: 'thinking_delta'; delta: string }
   | { type: 'tool_start'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; id: string; name: string; output: string; isError: boolean }
+  | { type: 'todos_updated'; todos: Array<{ content: string; activeForm: string; status: 'pending' | 'in_progress' | 'completed' }> }
   | { type: 'message_complete'; usage: { input_tokens: number; output_tokens: number } }
   | { type: 'error'; message: string }
   | { type: 'done' }
@@ -123,6 +125,16 @@ export interface NohiSettings {
   firecrawlApiKey?: string
   // Optional self-hosted Firecrawl instance URL (defaults to https://api.firecrawl.dev)
   firecrawlApiUrl?: string
+  // Lifecycle hooks (PreToolUse / PostToolUse / Stop / UserPromptSubmit)
+  hooks?: HookConfig[]
+}
+
+export interface HookConfig {
+  event: 'PreToolUse' | 'PostToolUse' | 'Stop' | 'UserPromptSubmit'
+  matcher?: string
+  command: string
+  description?: string
+  enabled?: boolean
 }
 
 export interface McpServerConfig {

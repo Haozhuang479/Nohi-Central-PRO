@@ -14,6 +14,8 @@ import type {
   NohiSettings,
 } from './types'
 import { ALL_TOOLS } from './tools/index'
+import { registerSubagentRunner } from './tools/task'
+import { runHooks } from './hooks/runner'
 import { mcpManager } from './mcp/client'
 import { buildSkillInjection } from './skills/loader'
 import { buildMemoryInjection } from './memory/store'
@@ -191,14 +193,17 @@ async function* streamOpenAI(
   finishReason?: string
 }> {
   const isOSeries = model.startsWith('o1') || model.startsWith('o3') || model.startsWith('o4')
+  const isGpt5 = model.startsWith('gpt-5')
   const body: Record<string, unknown> = {
     model,
     messages: oaiMessages,
     stream: true,
   }
   // o-series models use max_completion_tokens; others use max_tokens
-  if (isOSeries) {
+  if (isOSeries || isGpt5) {
     body['max_completion_tokens'] = maxTokens
+    // Reasoning models accept reasoning_effort: minimal | low | medium | high
+    body['reasoning_effort'] = 'medium'
   } else {
     body['max_tokens'] = maxTokens
   }
@@ -323,7 +328,18 @@ Persistent memory (cross-conversation):
 - Use \`memory_read\` at the start of a new topic to recall relevant facts.
 - Use \`memory_write\` whenever you learn something durable about the user, their store, brand, products, preferences, recurring tasks, or non-obvious decisions. Save short factual entries — the user's name/role, store URL, brand voice, key product SKUs, integrations they use, and any "always do X" / "never do Y" rules.
 - Categorize each memory: user / project / feedback / reference. Lead with the fact, then a short Why and How-to-apply line when useful.
-- Don't save trivia, ephemeral state, or anything derivable from the current code/session. Don't ask permission to save — just save it.${planInstructions}${skillInjection}${memory}${persistentMemory}`
+- Don't save trivia, ephemeral state, or anything derivable from the current code/session. Don't ask permission to save — just save it.
+
+Task management with \`todo_write\`:
+- Use proactively when (a) the task has 3+ steps, (b) the user gave multiple tasks, or (c) you want to demonstrate progress.
+- Each todo has \`content\` (imperative, e.g. "Run tests"), \`activeForm\` (continuous, e.g. "Running tests"), and \`status\` (pending|in_progress|completed).
+- Mark exactly ONE task as in_progress at a time. Update status immediately as you complete each item — do not batch.
+- Skip for trivial single-step work.
+
+Subagents with \`task\`:
+- Spawn a subagent for focused work that needs many tool calls (e.g. exploring a large codebase, multi-source research). The subagent has its own tool loop and returns a single summary.
+- Provide a clear, self-contained \`prompt\` — the subagent has no memory of this conversation.
+- Don't use for trivial work that's faster to do inline.${planInstructions}${skillInjection}${memory}${persistentMemory}`
 }
 
 // ─── Main agent runner ─────────────────────────────────────────────────────
@@ -334,7 +350,27 @@ export async function* runAgent(
   activeSkills: Skill[],
   onEvent: (event: AgentEvent) => void
 ): AsyncGenerator<AgentEvent> {
+  // Register self as the subagent runner so the Task tool can spawn nested agents
+  registerSubagentRunner(runAgent, activeSkills)
+
   const userMessages = session.messages
+
+  // UserPromptSubmit hooks — fire once per agent run with the latest user prompt
+  const lastUserMsg = userMessages[userMessages.length - 1]
+  const lastUserText = typeof lastUserMsg?.content === 'string'
+    ? lastUserMsg.content
+    : (lastUserMsg?.content as Array<{ type: string; text?: string }>)
+        ?.filter((b) => b.type === 'text').map((b) => b.text ?? '').join(' ') ?? ''
+  const promptHook = await runHooks('UserPromptSubmit', {
+    userPrompt: lastUserText,
+    workingDir: session.workingDir || settings.workingDir,
+  }, settings)
+  if (promptHook.blocked) {
+    const blockMsg = promptHook.results.map((r) => r.stderr || r.stdout).join('\n').trim() || 'Blocked by UserPromptSubmit hook'
+    yield { type: 'error', message: blockMsg }
+    yield { type: 'done' }
+    return
+  }
   const lastUser = userMessages[userMessages.length - 1]
   const userText =
     typeof lastUser.content === 'string'
@@ -455,9 +491,22 @@ export async function* runAgent(
           toolResultMsgs.push({ role: 'tool', tool_call_id: tc.id, content: `Unknown tool: ${tc.name}` })
           continue
         }
+        // PreToolUse hooks
+        const preHook = await runHooks('PreToolUse', { toolName: tc.name, toolInput: input, workingDir }, settings)
+        if (preHook.blocked) {
+          const blockMsg = preHook.results.map((r) => r.stderr || r.stdout).join('\n').trim() || 'Blocked by PreToolUse hook'
+          yield { type: 'tool_result', id: tc.id, name: tc.name, output: blockMsg, isError: true }
+          toolResultMsgs.push({ role: 'tool', tool_call_id: tc.id, content: blockMsg })
+          continue
+        }
         const result = await tool.call(input, { workingDir, settings, onProgress: (t) => onEvent({ type: 'text_delta', delta: t }) })
         const output = result.error ?? result.output ?? ''
         yield { type: 'tool_result', id: tc.id, name: tc.name, output, isError: !!result.error }
+        runHooks('PostToolUse', { toolName: tc.name, toolInput: input, toolOutput: output, workingDir }, settings).catch(() => {})
+        if (tc.name === 'todo_write' && !result.error) {
+          const todos = (input.todos ?? []) as Array<{ content: string; activeForm: string; status: 'pending' | 'in_progress' | 'completed' }>
+          yield { type: 'todos_updated', todos }
+        }
         toolResultMsgs.push({ role: 'tool', tool_call_id: tc.id, content: output })
       }
       oaiMessages = [...oaiMessages, ...toolResultMsgs]
@@ -491,11 +540,23 @@ export async function* runAgent(
 
     let stream: Awaited<ReturnType<typeof client.messages.stream>>
     try {
+      // Build cache-controlled system prompt (saves ~90% on repeated turns)
+      const cachedSystem = [
+        { type: 'text' as const, text: systemPrompt, cache_control: { type: 'ephemeral' as const } },
+      ]
+      // Cache-control the last tool def too — caches the entire tool definitions block
+      const toolDefs = buildAnthropicToolDefs(allTools)
+      const cachedTools = toolDefs.length > 0
+        ? toolDefs.map((t, i) => i === toolDefs.length - 1
+          ? ({ ...t, cache_control: { type: 'ephemeral' as const } })
+          : t)
+        : toolDefs
+
       const streamParams: Anthropic.MessageStreamParams = {
         model: session.model,
         max_tokens: maxTokens,
-        system: systemPrompt,
-        tools: buildAnthropicToolDefs(allTools),
+        system: cachedSystem,
+        tools: cachedTools as Anthropic.Tool[],
         messages: apiMessages,
       }
       // Enable extended thinking for supported models when plan mode is active
@@ -550,6 +611,9 @@ export async function* runAgent(
           yield event
         } else if (chunk.delta.type === 'input_json_delta' && currentToolBlock) {
           currentToolBlock.inputJson += chunk.delta.partial_json
+        } else if ((chunk.delta as { type: string; thinking?: string }).type === 'thinking_delta') {
+          const thinkingText = (chunk.delta as { thinking?: string }).thinking ?? ''
+          if (thinkingText) yield { type: 'thinking_delta', delta: thinkingText }
         }
       } else if (chunk.type === 'content_block_stop') {
         if (currentTextBlock) {
@@ -636,6 +700,19 @@ export async function* runAgent(
         continue
       }
 
+      // PreToolUse hooks — non-zero exit blocks the tool call
+      const preHook = await runHooks('PreToolUse', {
+        toolName: toolCall.name,
+        toolInput: toolCall.input,
+        workingDir,
+      }, settings)
+      if (preHook.blocked) {
+        const blockMsg = preHook.results.map((r) => r.stderr || r.stdout).join('\n').trim() || 'Blocked by PreToolUse hook'
+        yield { type: 'tool_result', id: toolCall.id, name: toolCall.name, output: blockMsg, isError: true }
+        toolResults.push({ type: 'tool_result', tool_use_id: toolCall.id, content: blockMsg, is_error: true })
+        continue
+      }
+
       const result = await tool.call(toolCall.input, {
         workingDir,
         settings,
@@ -645,6 +722,14 @@ export async function* runAgent(
       const output = result.error ?? result.output ?? ''
       const isError = !!result.error
 
+      // PostToolUse hooks — observation only (don't block)
+      runHooks('PostToolUse', {
+        toolName: toolCall.name,
+        toolInput: toolCall.input,
+        toolOutput: output,
+        workingDir,
+      }, settings).catch(() => {})
+
       const event: AgentEvent = {
         type: 'tool_result',
         id: toolCall.id,
@@ -653,6 +738,11 @@ export async function* runAgent(
         isError,
       }
       yield event
+
+      if (toolCall.name === 'todo_write' && !isError) {
+        const todos = (toolCall.input.todos ?? []) as Array<{ content: string; activeForm: string; status: 'pending' | 'in_progress' | 'completed' }>
+        yield { type: 'todos_updated', todos }
+      }
 
       toolResults.push({
         type: 'tool_result',
@@ -668,6 +758,9 @@ export async function* runAgent(
       content: toolResults as unknown as Message['content'],
     })
   }
+
+  // Stop hooks — observation only, fired after the agent loop completes
+  runHooks('Stop', { workingDir: session.workingDir || settings.workingDir }, settings).catch(() => {})
 
   yield { type: 'done' }
 }

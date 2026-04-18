@@ -5,6 +5,15 @@ import { readFile, writeFile } from 'fs/promises'
 import { resolve } from 'path'
 import type { ToolDef, ToolResult, ToolCallOpts } from '../types'
 
+function buildUnifiedDiff(oldStr: string, newStr: string): string {
+  const oldLines = oldStr.split('\n')
+  const newLines = newStr.split('\n')
+  const lines: string[] = []
+  for (const l of oldLines) lines.push(`- ${l}`)
+  for (const l of newLines) lines.push(`+ ${l}`)
+  return lines.join('\n')
+}
+
 export const FileEditTool: ToolDef = {
   name: 'edit_file',
   description:
@@ -47,7 +56,10 @@ export const FileEditTool: ToolDef = {
 
       const updated = content.replace(oldString, newString)
       await writeFile(filePath, updated, 'utf-8')
-      return { output: `Edited ${filePath}` }
+
+      // Build a unified diff for display
+      const diff = buildUnifiedDiff(oldString, newString)
+      return { output: `Edited ${filePath}\n\n\`\`\`diff\n${diff}\n\`\`\`` }
     } catch (err: unknown) {
       const e = err as { code?: string; message?: string }
       if (e.code === 'ENOENT') return { error: `File not found: ${filePath}` }

@@ -11,6 +11,9 @@ import { MemoryReadTool, MemoryWriteTool, MemoryDeleteTool } from './memory'
 import { DeepResearchTool } from './deepResearch'
 import { ImageGenerateTool, ImageEditTool } from './imageGenerate'
 import { FirecrawlScrapeTool, FirecrawlSearchTool, FirecrawlCrawlTool } from './firecrawl'
+import { TodoWriteTool } from './todoWrite'
+import { TaskTool } from './task'
+import { NotebookEditTool } from './notebookEdit'
 import type { ToolDef } from '../types'
 
 export const ALL_TOOLS: ToolDef[] = [
@@ -33,6 +36,9 @@ export const ALL_TOOLS: ToolDef[] = [
   FirecrawlScrapeTool,
   FirecrawlSearchTool,
   FirecrawlCrawlTool,
+  TodoWriteTool,
+  TaskTool,
+  NotebookEditTool,
 ]
 
 export { BashTool, FileReadTool, FileWriteTool, FileEditTool, GlobTool, GrepTool, WebFetchTool, WebSearchTool, ProductSearchTool, ProductUploadTool }
