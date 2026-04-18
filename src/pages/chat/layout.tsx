@@ -102,6 +102,38 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
     setSessions((prev: Session[]) => [stub, ...prev])
   }, [language, settings.workingDir, setSession, setSessions])
 
+  const exportSession = useCallback(async (id: string, format: 'md' | 'json', e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!window.nohi?.sessions) return
+    const full = await window.nohi.sessions.load(id)
+    if (!full) return
+    let content: string
+    let filename: string
+    if (format === 'json') {
+      content = JSON.stringify(full, null, 2)
+      filename = `${(full.title || 'chat').replace(/[^a-z0-9-]+/gi, '_').slice(0, 60)}.json`
+    } else {
+      const lines: string[] = [`# ${full.title || 'Chat'}`, '', `_${new Date(full.createdAt).toLocaleString()} — ${full.model}_`, '']
+      for (const m of full.messages) {
+        const text = typeof m.content === 'string' ? m.content
+          : (m.content as Array<{ type: string; text?: string }>)
+              .filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n')
+        lines.push(`## ${m.role === 'user' ? 'User' : 'Assistant'}`, '', text, '')
+      }
+      content = lines.join('\n')
+      filename = `${(full.title || 'chat').replace(/[^a-z0-9-]+/gi, '_').slice(0, 60)}.md`
+    }
+    const blob = new Blob([content], { type: format === 'json' ? 'application/json' : 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }, [])
+
   const deleteSession = useCallback(async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (typeof window !== 'undefined' && window.nohi?.sessions) {
@@ -118,14 +150,48 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
     }
   }, [session, sessions, setSessions, setSession])
 
-  // Filter + group sessions
+  // Full-text content search across all sessions (debounced via IPC)
+  const [contentMatchIds, setContentMatchIds] = useState<Set<string> | null>(null)
+  useEffect(() => {
+    if (!search.trim() || search.length < 2) { setContentMatchIds(null); return }
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      if (!window.nohi?.sessions) return
+      const matches = new Set<string>()
+      const q = search.toLowerCase()
+      // Load each session's full body and look for matches in message text
+      for (const s of sessions) {
+        if ((s.title || '').toLowerCase().includes(q)) {
+          matches.add(s.id)
+          continue
+        }
+        try {
+          const full = await window.nohi.sessions.load(s.id)
+          if (!full) continue
+          const found = full.messages.some((m) => {
+            const text = typeof m.content === 'string' ? m.content
+              : (m.content as Array<{ type: string; text?: string }>)
+                  .filter((b) => b.type === 'text').map((b) => b.text ?? '').join(' ')
+            return text.toLowerCase().includes(q)
+          })
+          if (found) matches.add(s.id)
+        } catch { /* ignore */ }
+        if (cancelled) return
+      }
+      if (!cancelled) setContentMatchIds(matches)
+    }, 250)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [search, sessions])
+
+  // Filter + group sessions (title fast-path + content match overlay)
   const filteredSessions = useMemo(() => {
     if (!search.trim()) return sessions
     const q = search.toLowerCase()
-    return sessions.filter((s) =>
-      (s.title || '').toLowerCase().includes(q)
-    )
-  }, [sessions, search])
+    return sessions.filter((s) => {
+      if ((s.title || '').toLowerCase().includes(q)) return true
+      return contentMatchIds?.has(s.id) ?? false
+    })
+  }, [sessions, search, contentMatchIds])
 
   const grouped = useMemo(() => {
     const order = ['today', 'yesterday', 'week', 'older'] as const
@@ -233,17 +299,27 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
                           : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
                       )}
                     >
-                      <span className="flex-1 text-xs truncate pr-5">
+                      <span className="flex-1 text-xs truncate pr-12">
                         {s.title || (language === 'zh' ? '新对话' : 'New Chat')}
                       </span>
                       {hoveredId === s.id && (
-                        <button
-                          type="button"
-                          onClick={(e) => deleteSession(s.id, e)}
-                          className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center size-5 rounded-md text-sidebar-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors text-xs"
-                        >
-                          ×
-                        </button>
+                        <span className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={(e) => exportSession(s.id, 'md', e)}
+                            title={language === 'zh' ? '导出 Markdown' : 'Export as Markdown'}
+                            className="flex items-center justify-center size-5 rounded-md text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors text-[10px]"
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => deleteSession(s.id, e)}
+                            className="flex items-center justify-center size-5 rounded-md text-sidebar-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors text-xs"
+                          >
+                            ×
+                          </button>
+                        </span>
                       )}
                     </button>
                   ))}

@@ -1,6 +1,6 @@
 {
   "name": "nohi-central-pro",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Nohi Central PRO — Local AI Operations Hub",
   "main": "out/main/index.js",
   "scripts": {
@@ -47,9 +47,14 @@
     "date-fns": "4.1.0",
     "dompurify": "^3.3.3",
     "embla-carousel-react": "8.5.1",
+    "highlight.js": "^11.11.1",
     "input-otp": "1.4.1",
+    "katex": "^0.16.45",
     "lucide-react": "^0.454.0",
     "marked": "^15.0.11",
+    "marked-highlight": "^2.2.4",
+    "marked-katex-extension": "^5.1.8",
+    "mermaid": "^11.14.0",
     "node-fetch": "^3.3.2",
     "react": "^18.3.1",
     "react-day-picker": "9.8.0",

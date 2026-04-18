@@ -2,7 +2,15 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import nohiLogo from '@/assets/nohi-logo.svg'
 import { useVoiceRecorder } from '@/lib/use-voice-recorder'
 import { marked } from 'marked'
+import { markedHighlight } from 'marked-highlight'
+import markedKatex from 'marked-katex-extension'
+import hljs from 'highlight.js/lib/common'
 import DOMPurify from 'dompurify'
+import mermaid from 'mermaid'
+import 'highlight.js/styles/github.css'
+import 'katex/dist/katex.min.css'
+
+mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict', fontSize: 12 })
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
 import { useAIStore } from '@/store/ai-store'
@@ -40,54 +48,122 @@ function sanitizeHtml(html: string): string {
       'blockquote', 'code', 'pre', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
       'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'span', 'div',
       'img', 'details', 'summary', 'del', 'sup', 'sub',
+      // KaTeX output
+      'math', 'mrow', 'mi', 'mo', 'mn', 'msup', 'msub', 'mfrac', 'msqrt',
+      'svg', 'path', 'g', 'use', 'defs', 'symbol', 'title', 'desc',
+      // Mermaid (server-side rendered SVG)
+      'foreignObject',
     ],
     ALLOWED_ATTR: [
-      'href', 'target', 'rel', 'class', 'data-code', 'role',
+      'href', 'target', 'rel', 'class', 'data-code', 'data-lang', 'data-img', 'role',
       'src', 'alt', 'width', 'height', 'loading',
+      // KaTeX & SVG
+      'aria-hidden', 'style', 'd', 'viewbox', 'viewBox', 'fill', 'stroke',
+      'stroke-width', 'transform', 'x', 'y', 'cx', 'cy', 'r', 'points',
+      'preserveAspectRatio', 'xmlns', 'xmlns:xlink', 'xlink:href',
     ],
     FORCE_BODY: false,
     ADD_ATTR: ['target'],
   })
 }
 
-// ─── Markdown renderer using `marked` ────────────────────────────────────────
+// ─── Markdown renderer (marked + highlight.js + KaTeX) ──────────────────────
 
-// Configure marked
 marked.setOptions({ breaks: true, gfm: true })
 
-// Custom renderer to inject copy button containers for code blocks
+// Syntax highlighting via highlight.js
+marked.use(
+  markedHighlight({
+    langPrefix: 'hljs language-',
+    highlight(code, lang) {
+      if (lang === 'diff') {
+        return code
+          .split('\n')
+          .map((line) => {
+            const esc = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            if (line.startsWith('+')) return `<span class="diff-add">${esc}</span>`
+            if (line.startsWith('-')) return `<span class="diff-del">${esc}</span>`
+            if (line.startsWith('@@')) return `<span class="diff-hunk">${esc}</span>`
+            return esc
+          })
+          .join('\n')
+      }
+      try {
+        const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
+        return hljs.highlight(code, { language, ignoreIllegals: true }).value
+      } catch {
+        return code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      }
+    },
+  }),
+)
+
+// KaTeX math: $...$ and $$...$$
+try {
+  marked.use(markedKatex({ throwOnError: false }))
+} catch {
+  // KaTeX optional — degrade gracefully
+}
+
 const renderer = new marked.Renderer()
 renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
-  const escapedText = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-  const langLabel = lang ? `<span class="code-lang">${lang}</span>` : ''
-  return `<div class="code-block-wrapper relative group/code my-2">${langLabel}<span role="button" class="copy-code-btn absolute top-2 right-2 opacity-0 group-hover/code:opacity-100 transition-opacity rounded-md bg-muted/80 hover:bg-muted px-2 py-1 text-[10px] text-muted-foreground border border-border/50 cursor-pointer select-none" data-code="${text.replace(/"/g, '&quot;')}">Copy</span><pre class="bg-muted/60 rounded-lg p-3 text-xs font-mono overflow-x-auto"><code>${escapedText}</code></pre></div>`
+  // The highlighter has already processed the body. Wrap it for the copy button.
+  const safeCode = text.replace(/"/g, '&quot;').replace(/\n/g, '&#10;')
+  const langLabel = lang
+    ? `<span class="absolute top-2 left-3 text-[10px] uppercase tracking-wider text-muted-foreground/70">${lang}</span>`
+    : ''
+  // marked-highlight has wrapped highlighted code; we need to re-parse it through marked's defaults
+  // Since markedHighlight already ran, `text` is the raw code. We re-highlight here for the renderer override.
+  let highlighted: string
+  if (lang === 'diff') {
+    highlighted = text
+      .split('\n')
+      .map((line) => {
+        const esc = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        if (line.startsWith('+')) return `<span class="diff-add">${esc}</span>`
+        if (line.startsWith('-')) return `<span class="diff-del">${esc}</span>`
+        if (line.startsWith('@@')) return `<span class="diff-hunk">${esc}</span>`
+        return esc
+      })
+      .join('\n')
+  } else {
+    try {
+      const language = lang && hljs.getLanguage(lang) ? lang : 'plaintext'
+      highlighted = hljs.highlight(text, { language, ignoreIllegals: true }).value
+    } catch {
+      highlighted = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    }
+  }
+  return `<div class="code-block-wrapper relative group/code my-2">${langLabel}<span role="button" class="copy-code-btn absolute top-2 right-2 opacity-0 group-hover/code:opacity-100 transition-opacity rounded-md bg-muted/80 hover:bg-muted px-2 py-1 text-[10px] text-muted-foreground border border-border/50 cursor-pointer select-none" data-code="${safeCode}">Copy</span><pre class="bg-muted/60 rounded-lg ${lang ? 'pt-7' : 'pt-3'} pb-3 px-3 text-xs font-mono overflow-x-auto"><code class="hljs language-${lang ?? 'plaintext'}">${highlighted}</code></pre></div>`
 }
 renderer.codespan = ({ text }: { text: string }) => {
   return `<code class="bg-muted/60 rounded px-1 py-0.5 text-xs font-mono">${text}</code>`
 }
-// Render images — convert file:// to nohi-file:// for local images
+// Render images — convert file:// to nohi-file:// for local images, add lightbox handle
 renderer.image = ({ href, title, text }: { href: string; title?: string | null; text: string }) => {
   let src = href
   if (src.startsWith('file://')) {
     src = `nohi-file://${src.slice(7)}`
   }
   const titleAttr = title ? ` title="${title}"` : ''
-  return `<img src="${src}" alt="${text || 'Image'}"${titleAttr} loading="lazy" class="max-w-full max-h-[400px] rounded-xl object-contain my-2" onerror="this.style.display='none'" />`
+  return `<img src="${src}" alt="${text || 'Image'}"${titleAttr} loading="lazy" data-img="${src}" class="max-w-full max-h-[400px] rounded-xl object-contain my-2 cursor-zoom-in hover:opacity-95 transition-opacity" onerror="this.style.display='none'" />`
 }
-// Render links to open externally
 renderer.link = ({ href, title, tokens }: { href: string; title?: string | null; tokens: unknown[] }) => {
   const text = (tokens as Array<{ type: string; raw?: string; text?: string }>)
     .map(t => t.text ?? t.raw ?? '').join('')
   const titleAttr = title ? ` title="${title}"` : ''
   return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer" class="text-blue-500 hover:underline">${text}</a>`
 }
+// GFM task list support: render unchecked/checked items with custom styling
+renderer.checkbox = ({ checked }: { checked: boolean }) => {
+  return checked
+    ? `<input type="checkbox" checked disabled class="mr-1.5 align-middle accent-emerald-500" />`
+    : `<input type="checkbox" disabled class="mr-1.5 align-middle" />`
+}
 
 function renderMarkdown(text: string): string {
   try {
-    const html = marked.parse(text, { renderer }) as string
+    const html = marked.parse(text, { renderer, async: false }) as string
     return sanitizeHtml(html)
   } catch {
     return sanitizeHtml(text.replace(/</g, '&lt;').replace(/>/g, '&gt;'))
@@ -96,22 +172,101 @@ function renderMarkdown(text: string): string {
 
 // ─── Copy code button handler (injected via event delegation) ─────────────────
 
+// Render mermaid code blocks as SVG diagrams (post-mount)
+function useMermaidRenderer(containerRef: React.RefObject<HTMLDivElement | null>, content: string) {
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const blocks = el.querySelectorAll<HTMLElement>('code.language-mermaid')
+    if (blocks.length === 0) return
+    let cancelled = false
+    blocks.forEach(async (block, i) => {
+      const wrapper = block.closest('.code-block-wrapper') as HTMLElement | null
+      if (!wrapper || wrapper.dataset.mermaidRendered === '1') return
+      const source = block.textContent ?? ''
+      try {
+        const id = `mermaid-${Date.now()}-${i}`
+        const { svg } = await mermaid.render(id, source)
+        if (cancelled) return
+        const container = document.createElement('div')
+        container.className = 'mermaid-diagram my-2 flex justify-center bg-muted/20 rounded-lg p-3 overflow-x-auto'
+        container.innerHTML = svg
+        wrapper.replaceWith(container)
+        wrapper.dataset.mermaidRendered = '1'
+      } catch {
+        // Leave the original code block on parse failure
+      }
+    })
+    return () => { cancelled = true }
+  }, [containerRef, content])
+}
+
 function useCodeCopyHandler(containerRef: React.RefObject<HTMLDivElement | null>) {
   useEffect(() => {
     const el = containerRef.current
     if (!el) return
     const handler = (e: MouseEvent) => {
-      const btn = (e.target as HTMLElement).closest('.copy-code-btn') as HTMLElement | null
-      if (!btn) return
-      const code = btn.getAttribute('data-code') ?? ''
-      navigator.clipboard.writeText(code).then(() => {
-        btn.textContent = 'Copied!'
-        setTimeout(() => { btn.textContent = 'Copy' }, 1500)
-      }).catch(() => {})
+      const target = e.target as HTMLElement
+      // Code copy
+      const btn = target.closest('.copy-code-btn') as HTMLElement | null
+      if (btn) {
+        const code = btn.getAttribute('data-code') ?? ''
+        navigator.clipboard.writeText(code).then(() => {
+          btn.textContent = 'Copied!'
+          setTimeout(() => { btn.textContent = 'Copy' }, 1500)
+        }).catch(() => {})
+        return
+      }
+      // Image lightbox — click any inline image to open
+      const img = target.closest('img[data-img]') as HTMLImageElement | null
+      if (img) {
+        const src = img.getAttribute('data-img') ?? img.src
+        window.dispatchEvent(new CustomEvent('nohi:lightbox', { detail: { src } }))
+      }
     }
     el.addEventListener('click', handler)
     return () => el.removeEventListener('click', handler)
   }, [containerRef])
+}
+
+// ─── Image lightbox modal ───────────────────────────────────────────────────
+
+function ImageLightbox() {
+  const [src, setSrc] = useState<string | null>(null)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ src: string }>).detail
+      setSrc(detail?.src ?? null)
+    }
+    window.addEventListener('nohi:lightbox', handler)
+    const escHandler = (e: KeyboardEvent) => { if (e.key === 'Escape') setSrc(null) }
+    window.addEventListener('keydown', escHandler)
+    return () => {
+      window.removeEventListener('nohi:lightbox', handler)
+      window.removeEventListener('keydown', escHandler)
+    }
+  }, [])
+  if (!src) return null
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm cursor-zoom-out"
+      onClick={() => setSrc(null)}
+    >
+      <img
+        src={src}
+        alt=""
+        className="max-w-[92vw] max-h-[92vh] object-contain rounded-xl shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+      <button
+        type="button"
+        onClick={() => setSrc(null)}
+        className="absolute top-5 right-5 size-9 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur text-white text-xl flex items-center justify-center"
+      >
+        ×
+      </button>
+    </div>
+  )
 }
 
 // ─── Tool type label helpers ────────────────────────────────────────────────
@@ -201,6 +356,7 @@ function ToolResultContent({ tool }: { tool: ToolBlockState }) {
   const result = tool.result ?? ''
   const containerRef = useRef<HTMLDivElement>(null)
   useCodeCopyHandler(containerRef)
+  useMermaidRenderer(containerRef, result)
 
   if (tool.isError) {
     return (
@@ -399,6 +555,7 @@ function MessageView({ role, content, tools, isLastAssistant, onEdit, onRetry }:
       : []
 
   const relevantTools = tools.filter((t) => toolUseIds.includes(t.id))
+  useMermaidRenderer(containerRef, textContent)
 
   if (isUser) {
     return (
@@ -469,6 +626,7 @@ function StreamingMessageView({
   const containerRef = useRef<HTMLDivElement>(null)
   const [thinkingOpen, setThinkingOpen] = useState(false)
   useCodeCopyHandler(containerRef)
+  useMermaidRenderer(containerRef, text)
 
   return (
     <div className="flex items-start px-4 py-1.5">
@@ -652,10 +810,26 @@ export default function ChatPage({ settings }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // ── Auto-scroll on new content ────────────────────────────────────────────
+  // ── Smart auto-scroll: only scroll to bottom if user is already near bottom ──
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [stickToBottom, setStickToBottom] = useState(true)
+
   useEffect(() => {
+    const el = scrollContainerRef.current
+    if (!el) return
+    const onScroll = () => {
+      // 80px threshold — if scrolled up beyond this, stop auto-following
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+      setStickToBottom(distFromBottom < 80)
+    }
+    el.addEventListener('scroll', onScroll, { passive: true })
+    return () => el.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    if (!stickToBottom) return
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [session?.messages, streamingText])
+  }, [session?.messages, streamingText, stickToBottom])
 
   // ── Auto-resize textarea ──────────────────────────────────────────────────
   useEffect(() => {
@@ -936,12 +1110,31 @@ export default function ChatPage({ settings }: Props) {
         unsubRef.current?.()
         unsubRef.current = null
 
+        // rAF batching: collect text deltas and flush at most once per frame
+        let pendingFlush = false
+        let pendingThinking = ''
+        const flush = () => {
+          pendingFlush = false
+          setStreamingText(assistantText)
+          if (pendingThinking) {
+            const t = pendingThinking
+            pendingThinking = ''
+            setThinkingText((prev) => prev + t)
+          }
+        }
+        const scheduleFlush = () => {
+          if (pendingFlush) return
+          pendingFlush = true
+          requestAnimationFrame(flush)
+        }
+
         unsubRef.current = window.nohi.agent.onEvent((event: AgentEvent) => {
           if (event.type === 'text_delta') {
             assistantText += event.delta
-            setStreamingText(assistantText)
+            scheduleFlush()
           } else if (event.type === 'thinking_delta') {
-            setThinkingText((prev) => prev + event.delta)
+            pendingThinking += event.delta
+            scheduleFlush()
           } else if (event.type === 'tool_start') {
             const newTool: ToolBlockState = {
               id: event.id,
@@ -1121,6 +1314,8 @@ export default function ChatPage({ settings }: Props) {
   const currentRoundTools = currentRoundId ? (roundToolsMap[currentRoundId] ?? []) : []
 
   return (
+    <>
+    <ImageLightbox />
     <div
       className="flex flex-col h-full relative"
       onClick={closeMenus}
@@ -1311,7 +1506,7 @@ export default function ChatPage({ settings }: Props) {
       </div>
 
       {/* ── Messages area ────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto py-4 space-y-0.5">
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto py-4 space-y-0.5">
         {/* Empty state */}
         {!hasMessages && (
           <div className="flex flex-col items-center justify-center h-full gap-8 px-6">
@@ -1624,5 +1819,6 @@ export default function ChatPage({ settings }: Props) {
       </div>
       </div>
     </div>
+    </>
   )
 }

@@ -189,3 +189,27 @@ body {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
 }
+
+/* Diff syntax coloring (used by ```diff blocks) */
+.diff-add { color: #16a34a; background: rgba(22, 163, 74, 0.08); display: inline-block; width: 100%; }
+.diff-del { color: #dc2626; background: rgba(220, 38, 38, 0.08); display: inline-block; width: 100%; }
+.diff-hunk { color: #6b7280; font-weight: 600; }
+
+/* highlight.js overrides — calmer theme, smaller font */
+.code-block-wrapper .hljs { background: transparent !important; padding: 0 !important; font-size: 12px; }
+.code-block-wrapper .hljs-comment, .code-block-wrapper .hljs-quote { color: #8b949e; font-style: italic; }
+.code-block-wrapper .hljs-keyword, .code-block-wrapper .hljs-selector-tag { color: #d73a49; }
+.code-block-wrapper .hljs-string, .code-block-wrapper .hljs-doctag { color: #032f62; }
+.code-block-wrapper .hljs-title, .code-block-wrapper .hljs-section, .code-block-wrapper .hljs-name { color: #6f42c1; }
+.code-block-wrapper .hljs-number, .code-block-wrapper .hljs-literal { color: #005cc5; }
+.code-block-wrapper .hljs-built_in, .code-block-wrapper .hljs-type { color: #e36209; }
+.code-block-wrapper .hljs-variable, .code-block-wrapper .hljs-attr { color: #24292e; }
+
+/* KaTeX inline + display sizing */
+.katex { font-size: 1em; }
+.katex-display { margin: 0.6em 0; overflow-x: auto; overflow-y: hidden; }
+
+/* Prose tables — make GFM tables look proper */
+.prose table { border-collapse: collapse; font-size: 12px; margin: 0.6em 0; }
+.prose th, .prose td { border: 1px solid var(--border); padding: 0.4em 0.7em; text-align: left; }
+.prose th { background: var(--muted); font-weight: 600; }
