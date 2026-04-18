@@ -5,12 +5,59 @@ import type { ToolDef, ToolResult, ToolCallOpts } from '../types'
 
 const MAX_LENGTH = 50_000 // ~50KB of markdown
 
-async function htmlToText(html: string): Promise<string> {
-  // Lazy import to avoid bundling issues
-  const TurndownService = (await import('turndown')).default
-  const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
-  td.remove(['script', 'style', 'nav', 'footer', 'iframe', 'noscript'])
-  return td.turndown(html)
+/**
+ * Lightweight HTML → text converter. Replaced a 200 KB turndown dependency whose
+ * polish we weren't really using (we only want readable text for the agent, not
+ * Markdown fidelity). Handles the cases that matter: strip noise tags, collapse
+ * whitespace, preserve paragraph + link structure.
+ */
+function htmlToText(html: string): string {
+  // Remove noise elements entirely (including their content)
+  let out = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
+    .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
+    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+
+  // Headings → markdown-ish
+  out = out.replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, level, inner) => {
+    return '\n\n' + '#'.repeat(Number(level)) + ' ' + stripTags(inner).trim() + '\n\n'
+  })
+
+  // Links → [text](url)
+  out = out.replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_m, href, inner) => {
+    const text = stripTags(inner).trim()
+    return text ? `[${text}](${href})` : href
+  })
+
+  // Paragraphs and <br> → line breaks
+  out = out.replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n\n')
+  out = out.replace(/<br\s*\/?>/gi, '\n')
+  out = out.replace(/<li\b[^>]*>/gi, '- ')
+
+  // Strip remaining tags
+  out = stripTags(out)
+
+  // Decode common entities
+  out = out
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+
+  // Collapse whitespace runs but preserve paragraph breaks
+  out = out.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+  return out
+}
+
+function stripTags(s: string): string {
+  return s.replace(/<[^>]+>/g, '')
 }
 
 export const WebFetchTool: ToolDef = {
@@ -56,7 +103,7 @@ export const WebFetchTool: ToolDef = {
 
       if (contentType.includes('text/html')) {
         const html = await response.text()
-        text = await htmlToText(html)
+        text = htmlToText(html)
       } else {
         text = await response.text()
       }

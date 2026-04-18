@@ -59,7 +59,30 @@ export async function webSearch(query: string, count: number, opts: ToolCallOpts
   return await duckDuckGoSearch(query, count)
 }
 
-// Fetch a URL and convert to clean markdown text
+// Lightweight HTML → readable text (was turndown — removed in v2.2.1).
+function stripHtml(html: string): string {
+  let out = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
+    .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
+    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+  out = out.replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, l, inner) => '\n\n' + '#'.repeat(Number(l)) + ' ' + inner.replace(/<[^>]+>/g, '').trim() + '\n\n')
+  out = out.replace(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_m, href, inner) => {
+    const t = inner.replace(/<[^>]+>/g, '').trim()
+    return t ? `[${t}](${href})` : href
+  })
+  out = out.replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n\n').replace(/<br\s*\/?>/gi, '\n').replace(/<li\b[^>]*>/gi, '- ')
+  out = out.replace(/<[^>]+>/g, '')
+  out = out
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&#x27;/g, "'")
+  return out.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim()
+}
+
+// Fetch a URL and convert to clean text
 export async function fetchAndConvert(url: string, maxLength = 50_000): Promise<string> {
   const response = await fetch(url, {
     headers: {
@@ -74,10 +97,7 @@ export async function fetchAndConvert(url: string, maxLength = 50_000): Promise<
   let text: string
   if (contentType.includes('text/html')) {
     const html = await response.text()
-    const TurndownService = (await import('turndown')).default
-    const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
-    td.remove(['script', 'style', 'nav', 'footer', 'iframe', 'noscript'])
-    text = td.turndown(html)
+    text = stripHtml(html)
   } else {
     text = await response.text()
   }

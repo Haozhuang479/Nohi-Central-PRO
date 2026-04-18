@@ -7,11 +7,25 @@ import { markedHighlight } from 'marked-highlight'
 import markedKatex from 'marked-katex-extension'
 import hljs from 'highlight.js/lib/common'
 import DOMPurify from 'dompurify'
-import mermaid from 'mermaid'
 import 'highlight.js/styles/github.css'
 import 'katex/dist/katex.min.css'
 
-mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict', fontSize: 12 })
+// Mermaid is ~3.4 MB (gzipped). Most chat messages have zero diagrams, so we
+// defer its entire module graph until the first `language-mermaid` code block
+// is rendered. The loader is cached — after the first diagram the subsequent
+// calls are just a ref lookup.
+type MermaidModule = { default: { initialize: (cfg: unknown) => void; render: (id: string, src: string) => Promise<{ svg: string }> } }
+let mermaidPromise: Promise<MermaidModule['default']> | null = null
+async function getMermaid(): Promise<MermaidModule['default']> {
+  if (!mermaidPromise) {
+    mermaidPromise = (async () => {
+      const mod = await import('mermaid') as unknown as MermaidModule
+      mod.default.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'strict', fontSize: 12 })
+      return mod.default
+    })()
+  }
+  return mermaidPromise
+}
 
 export function sanitizeHtml(html: string): string {
   return DOMPurify.sanitize(html, {
@@ -171,6 +185,7 @@ export function useMermaidRenderer(containerRef: React.RefObject<HTMLDivElement 
       const source = block.textContent ?? ''
       try {
         const id = `mermaid-${Date.now()}-${i}`
+        const mermaid = await getMermaid()
         const { svg } = await mermaid.render(id, source)
         if (cancelled) return
         const container = document.createElement('div')
