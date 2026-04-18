@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { NohiSettings, Session, Skill, AgentEvent } from '../main/engine/types'
+import type { Automation } from '../main/engine/automation/store'
 
 // Expose a clean, typed API to the renderer
 contextBridge.exposeInMainWorld('nohi', {
@@ -36,6 +37,23 @@ contextBridge.exposeInMainWorld('nohi', {
   mcp: {
     status: (): Promise<Record<string, string>> => ipcRenderer.invoke('mcp:status'),
     tools: (serverId: string): Promise<string[]> => ipcRenderer.invoke('mcp:tools', serverId),
+  },
+
+  // Automation (scheduled prompts)
+  automation: {
+    list: (): Promise<Automation[]> => ipcRenderer.invoke('automation:list'),
+    create: (data: Omit<Automation, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'nextRunAt'>): Promise<Automation[]> =>
+      ipcRenderer.invoke('automation:create', data),
+    update: (id: string, patch: Partial<Automation>): Promise<Automation[]> =>
+      ipcRenderer.invoke('automation:update', id, patch),
+    delete: (id: string): Promise<Automation[]> => ipcRenderer.invoke('automation:delete', id),
+    run: (id: string): Promise<{ sessionId: string; output: string } | { error: string }> =>
+      ipcRenderer.invoke('automation:run', id),
+    onCompleted: (callback: (info: { id: string; sessionId: string }) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, info: { id: string; sessionId: string }): void => callback(info)
+      ipcRenderer.on('automation:completed', handler)
+      return () => ipcRenderer.removeListener('automation:completed', handler)
+    },
   },
 
   // Dialogs

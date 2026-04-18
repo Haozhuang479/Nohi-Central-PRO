@@ -240,6 +240,19 @@ export function SellerSidebar() {
                 </SidebarMenuItem>
               </Collapsible>
 
+              {/* ── Automation ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === '/seller/automation'}
+                  tooltip="Automation"
+                >
+                  <Link to="/seller/automation">
+                    <span>Automation</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
               {/* ── Analytics ── */}
               <SidebarMenuItem>
                 <SidebarMenuButton

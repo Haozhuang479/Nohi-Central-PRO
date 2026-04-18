@@ -72,20 +72,26 @@ export const ImageGenerateTool: ToolDef = {
       await ensureImagesDir()
       opts.onProgress?.('Generating image...')
 
+      // gpt-image-1 always returns b64_json and rejects response_format param.
+      // dall-e-3 needs response_format='b64_json' explicitly. Build body accordingly.
+      const isGptImage = model.startsWith('gpt-image')
+      const body: Record<string, unknown> = { model, prompt, n: 1, size }
+      if (isGptImage) {
+        // gpt-image-1 supports quality: low/medium/high/auto
+        body.quality = quality
+      } else {
+        // dall-e-3 needs response_format and supports quality: standard/hd
+        body.response_format = 'b64_json'
+        body.quality = quality === 'high' ? 'hd' : 'standard'
+      }
+
       const resp = await fetch('https://api.openai.com/v1/images/generations', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          model,
-          prompt,
-          n: 1,
-          size,
-          quality,
-          response_format: 'b64_json',
-        }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(120_000), // 2 min for generation
       })
 

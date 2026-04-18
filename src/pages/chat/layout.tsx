@@ -165,7 +165,7 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
           <div className="px-3 pb-1 shrink-0">
             {(
               [
-                { label: language === 'zh' ? '自动化' : 'Automation', to: '/seller' },
+                { label: language === 'zh' ? '自动化' : 'Automation', to: '/seller/automation' },
                 { label: language === 'zh' ? '连接器' : 'Connectors', to: '/seller/catalog/connectors' },
                 { label: 'MCPs', to: '/chat/mcp' },
                 { label: language === 'zh' ? '技能' : 'Skills', to: '/chat/skills' },

@@ -27,6 +27,7 @@ const SettingsPage = lazy(() => import('@/pages/seller/settings/page'))
 const AnalyticsPage = lazy(() => import('@/pages/seller/analytics/page'))
 const SkillsPage = lazy(() => import('@/pages/seller/skills/page'))
 const McpPage = lazy(() => import('@/pages/seller/mcp/page'))
+const AutomationPage = lazy(() => import('@/pages/seller/automation/page'))
 
 // Catalog
 const OwnSupplyPage = lazy(() => import('@/pages/seller/catalog/own-supply/page'))
@@ -227,6 +228,7 @@ export default function App() {
 
                 {/* Top-level pages */}
                 <Route path="analytics" element={<AnalyticsPage />} />
+                <Route path="automation" element={<AutomationPage />} />
                 <Route path="skills" element={<SkillsPage />} />
                 <Route
                   path="mcp"

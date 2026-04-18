@@ -80,6 +80,7 @@ app.whenReady().then(async () => {
   await mkdir(join(homedir(), '.nohi', 'skills'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'memory'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'images'), { recursive: true })
+  await mkdir(join(homedir(), '.nohi', 'automation'), { recursive: true })
 
   // Register custom protocol to serve local images in the renderer
   protocol.handle('nohi-file', (request) => {
@@ -100,6 +101,7 @@ app.whenReady().then(async () => {
   }
 
   createWindow()
+  startScheduler()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -176,6 +178,90 @@ ipcMain.handle('skills:delete', async (_e, id: string) => {
   await reloadSkills()
   return activeSkills
 })
+
+// ── Automation (scheduled prompts) ───────────────────────────────────────
+import {
+  listAutomations,
+  createAutomation,
+  updateAutomation,
+  deleteAutomation,
+  recordRun,
+  getDueAutomations,
+  type Automation,
+} from './engine/automation/store'
+
+ipcMain.handle('automation:list', () => listAutomations())
+
+ipcMain.handle('automation:create', (_e, data: Omit<Automation, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'nextRunAt'>) =>
+  createAutomation(data),
+)
+
+ipcMain.handle('automation:update', (_e, id: string, patch: Partial<Automation>) =>
+  updateAutomation(id, patch),
+)
+
+ipcMain.handle('automation:delete', (_e, id: string) => deleteAutomation(id))
+
+// Manual "run now" — creates a session + runs the agent on the prompt
+ipcMain.handle('automation:run', async (_e, id: string) => {
+  const list = await listAutomations()
+  const auto = list.find((a) => a.id === id)
+  if (!auto) return { error: 'Automation not found' }
+  return runAutomation(auto, 'manual')
+})
+
+async function runAutomation(auto: Automation, _reason: 'manual' | 'scheduled'): Promise<{ sessionId: string; output: string } | { error: string }> {
+  const settings = getSettings()
+  const model = auto.model || settings.defaultModel
+  const session = createSession(model, settings.workingDir)
+  session.title = `[Auto] ${auto.name}`
+  session.messages.push({
+    id: `msg-${Date.now()}`,
+    role: 'user',
+    content: auto.prompt,
+    timestamp: Date.now(),
+  })
+  await saveSession(session)
+
+  let assistantText = ''
+  try {
+    for await (const event of runAgent(session, settings, activeSkills, () => {})) {
+      if (event.type === 'text_delta') assistantText += event.delta
+      if (event.type === 'done' || event.type === 'error') break
+    }
+    session.messages.push({
+      id: `msg-${Date.now() + 1}`,
+      role: 'assistant',
+      content: assistantText || '(no response)',
+      timestamp: Date.now(),
+    })
+    session.updatedAt = Date.now()
+    await saveSession(session)
+    await recordRun(auto.id, session.id, assistantText)
+    // Notify renderer so the sidebar refreshes
+    mainWindow?.webContents.send('automation:completed', { id: auto.id, sessionId: session.id })
+    return { sessionId: session.id, output: assistantText }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+// Scheduler: every 60s check for due automations
+let schedulerInterval: NodeJS.Timeout | null = null
+function startScheduler(): void {
+  if (schedulerInterval) return
+  schedulerInterval = setInterval(async () => {
+    try {
+      const due = await getDueAutomations()
+      for (const auto of due) {
+        // Fire and forget
+        runAutomation(auto, 'scheduled').catch(() => {})
+      }
+    } catch {
+      // ignore
+    }
+  }, 60_000)
+}
 
 // MCP status
 ipcMain.handle('mcp:status', () => mcpManager.getStatuses())

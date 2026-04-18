@@ -318,7 +318,12 @@ Guidelines:
 - For destructive file/shell operations, confirm with the user first.
 - Prefer editing existing files over creating new ones.
 - When researching, cite sources.
-- When you learn something important about the user or their project, save it with memory_write so future conversations can benefit.${planInstructions}${skillInjection}${memory}${persistentMemory}`
+
+Persistent memory (cross-conversation):
+- Use \`memory_read\` at the start of a new topic to recall relevant facts.
+- Use \`memory_write\` whenever you learn something durable about the user, their store, brand, products, preferences, recurring tasks, or non-obvious decisions. Save short factual entries — the user's name/role, store URL, brand voice, key product SKUs, integrations they use, and any "always do X" / "never do Y" rules.
+- Categorize each memory: user / project / feedback / reference. Lead with the fact, then a short Why and How-to-apply line when useful.
+- Don't save trivia, ephemeral state, or anything derivable from the current code/session. Don't ask permission to save — just save it.${planInstructions}${skillInjection}${memory}${persistentMemory}`
 }
 
 // ─── Main agent runner ─────────────────────────────────────────────────────

@@ -545,6 +545,7 @@ export default function ChatPage({ settings }: Props) {
     inputTokens,
     outputTokens,
     setSession,
+    setSessions,
     setIsRunning,
     setProvider,
     setModel,
@@ -774,10 +775,11 @@ export default function ChatPage({ settings }: Props) {
       if (!text.trim() || isRunning) return
 
       let activeSession = session
+      const isNewSession = !activeSession || activeSession.messages.length === 0
       if (!activeSession) {
         const stub: Session = {
           id: crypto.randomUUID(),
-          title: text.slice(0, 40),
+          title: 'New conversation',
           createdAt: Date.now(),
           updatedAt: Date.now(),
           messages: [],
@@ -815,14 +817,36 @@ export default function ChatPage({ settings }: Props) {
         timestamp: Date.now(),
       }
 
+      // Derive title from first user message (replaces "New conversation")
+      const derivedTitle = isNewSession
+        ? text.trim().slice(0, 50) || 'New conversation'
+        : activeSession.title
+
       const updatedSession: Session = {
         ...activeSession,
+        title: derivedTitle,
         model,  // always use the currently selected model from the store
         messages: [...activeSession.messages, userMsg as typeof activeSession.messages[0]],
         updatedAt: Date.now(),
       }
 
       setSession(updatedSession)
+
+      // Persist user message immediately so it's not lost if agent fails
+      if (typeof window !== 'undefined' && window.nohi?.sessions) {
+        window.nohi.sessions.save(updatedSession).catch(() => {})
+      }
+
+      // Sync sidebar list: insert if new, update title if existing
+      setSessions((prev: Session[]) => {
+        const lightweight: Session = { ...updatedSession, messages: [] }
+        const existing = prev.findIndex((s) => s.id === updatedSession.id)
+        if (existing === -1) return [lightweight, ...prev]
+        const next = [...prev]
+        next[existing] = lightweight
+        return next.sort((a, b) => b.updatedAt - a.updatedAt)
+      })
+
       setIsRunning(true)
       setInput('')
       setAttachedImages([])
@@ -894,6 +918,15 @@ export default function ChatPage({ settings }: Props) {
               if (typeof window !== 'undefined' && window.nohi?.sessions) {
                 window.nohi.sessions.save(saved).catch(() => {})
               }
+              // Bubble updated timestamp to sidebar so list reorders
+              setSessions((prevList: Session[]) => {
+                const lightweight: Session = { ...saved, messages: [] }
+                const idx = prevList.findIndex((s) => s.id === saved.id)
+                if (idx === -1) return [lightweight, ...prevList]
+                const next = [...prevList]
+                next[idx] = lightweight
+                return next.sort((a, b) => b.updatedAt - a.updatedAt)
+              })
               return saved
             })
 
@@ -932,7 +965,7 @@ export default function ChatPage({ settings }: Props) {
         }, 800)
       }
     },
-    [session, isRunning, model, provider, settings, setSession, setIsRunning, addTokens, language]
+    [session, isRunning, model, provider, settings, setSession, setSessions, setIsRunning, addTokens, language, attachedImages]
   )
 
   // ── Retry last assistant message (defined after sendMessage to close over it) ─
