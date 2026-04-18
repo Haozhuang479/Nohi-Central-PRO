@@ -9,10 +9,28 @@ import type { Session, Skill, NohiSettings } from './engine/types'
 import { getSettings, saveSettings, getLastSettingsError } from './store'
 import { runAgent } from './engine/agent'
 import { log, logError } from './engine/lib/logger'
+import { setTelemetryEnabled } from './engine/lib/telemetry'
 
-// Global crash safety net — without this, uncaught errors silently kill the process.
-process.on('uncaughtException', (err) => logError(err, '[uncaughtException]'))
-process.on('unhandledRejection', (reason) => logError(reason, '[unhandledRejection]'))
+// Global crash safety net — log AND surface to the renderer so the user can copy
+// the diagnostic bundle. Without this, uncaught errors silently kill the process.
+process.on('uncaughtException', (err) => {
+  logError(err, '[uncaughtException]')
+  notifyRendererCrash('uncaughtException', err)
+})
+process.on('unhandledRejection', (reason) => {
+  logError(reason, '[unhandledRejection]')
+  notifyRendererCrash('unhandledRejection', reason)
+})
+
+function notifyRendererCrash(kind: string, reason: unknown): void {
+  try {
+    const message = reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason)
+    const stack = reason instanceof Error ? reason.stack : undefined
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('app:crash', { kind, message, stack, timestamp: Date.now() })
+    }
+  } catch { /* best effort */ }
+}
 import {
   saveSession,
   loadSession,
@@ -100,6 +118,8 @@ app.whenReady().then(async () => {
   await mkdir(join(homedir(), '.nohi', 'catalog'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'orders'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'logs'), { recursive: true })
+  // Apply telemetry setting from disk on boot
+  setTelemetryEnabled(!!(getSettings() as { telemetryEnabled?: boolean }).telemetryEnabled)
   log('info', '[startup] Nohi Central PRO main process up')
 
   // Register custom protocol to serve local images in the renderer.
@@ -153,6 +173,8 @@ ipcMain.handle('settings:save', async (_e, raw: unknown) => {
     const e = err as { code?: string; message?: string }
     return { ok: false, error: getLastSettingsError()?.message ?? e.message ?? 'Failed to save settings' }
   }
+  // Re-apply telemetry preference on every save
+  setTelemetryEnabled(!!(settings as { telemetryEnabled?: boolean }).telemetryEnabled)
   await reloadSkills()
   if (settings.mcpServers.length > 0) {
     await mcpManager.connect(settings.mcpServers).catch((e) => logError(e, '[mcp] reconnect after settings save failed'))
@@ -161,6 +183,34 @@ ipcMain.handle('settings:save', async (_e, raw: unknown) => {
 })
 
 ipcMain.handle('settings:lastError', () => getLastSettingsError())
+
+// Diagnostic bundle — last N lines of today's log + key version info.
+// Used by the crash recovery UI's "Copy diagnostics" button.
+ipcMain.handle('diagnostics:bundle', async () => {
+  const { readFile, readdir } = await import('fs/promises')
+  const logsDir = join(homedir(), '.nohi', 'logs')
+  let logTail = '(no log file)'
+  try {
+    const files = (await readdir(logsDir)).filter((f) => f.endsWith('.log')).sort()
+    const latest = files[files.length - 1]
+    if (latest) {
+      const raw = await readFile(join(logsDir, latest), 'utf-8')
+      const lines = raw.split('\n')
+      logTail = lines.slice(-200).join('\n')
+    }
+  } catch {
+    /* no logs */
+  }
+  return {
+    version: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    electron: process.versions.electron,
+    node: process.versions.node,
+    timestamp: new Date().toISOString(),
+    logTail,
+  }
+})
 
 // Sessions
 ipcMain.handle('sessions:list', () => listSessions())

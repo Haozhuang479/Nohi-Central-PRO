@@ -1,6 +1,6 @@
 {
   "name": "nohi-central-pro",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "description": "Nohi Central PRO — Local AI Operations Hub",
   "main": "out/main/index.js",
   "scripts": {
@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "analyze": "ANALYZE=1 electron-vite build"
+    "analyze": "ANALYZE=1 electron-vite build",
+    "audit": "node scripts/audit.mjs",
+    "audit:bless": "node scripts/audit.mjs --write-baseline"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.37.0",

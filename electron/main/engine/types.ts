@@ -131,6 +131,9 @@ export interface NohiSettings {
   merchantId?: string
   // Lifecycle hooks (PreToolUse / PostToolUse / Stop / UserPromptSubmit)
   hooks?: HookConfig[]
+  // Local-only telemetry (opt-in). Writes to ~/.nohi/telemetry/<YYYY-MM>.jsonl.
+  // Nothing is uploaded — purely a local record the user can inspect.
+  telemetryEnabled?: boolean
 }
 
 export interface HookConfig {

@@ -93,6 +93,17 @@ contextBridge.exposeInMainWorld('nohi', {
   // External links
   openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:open-external', url),
 
+  // Diagnostics — fetch a bundle (version + log tail) for bug reports
+  diagnostics: {
+    bundle: (): Promise<{ version: string; platform: string; arch: string; electron: string; node: string; timestamp: string; logTail: string }> =>
+      ipcRenderer.invoke('diagnostics:bundle'),
+    onCrash: (callback: (info: { kind: string; message: string; stack?: string; timestamp: number }) => void): (() => void) => {
+      const handler = (_: Electron.IpcRendererEvent, info: { kind: string; message: string; stack?: string; timestamp: number }): void => callback(info)
+      ipcRenderer.on('app:crash', handler)
+      return () => ipcRenderer.removeListener('app:crash', handler)
+    },
+  },
+
   // API key testing
   testApiKey: (provider: string, apiKey: string): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke('api:test-key', { provider, apiKey }),

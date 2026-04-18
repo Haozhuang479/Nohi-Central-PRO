@@ -93,6 +93,7 @@ export const NohiSettingsSchema = z.object({
     description: z.string().max(500).optional(),
     enabled: z.boolean().optional(),
   })).optional(),
+  telemetryEnabled: z.boolean().optional(),
 })
 
 // ─── Automation ────────────────────────────────────────────────────────────

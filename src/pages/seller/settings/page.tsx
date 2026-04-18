@@ -785,6 +785,28 @@ export default function SettingsPage({ settings, onSave }: SettingsPageProps) {
         </div>
       </SettingsSection>
 
+      {/* ── 5b. Privacy & Diagnostics ────────────────────────────────── */}
+      <SettingsSection title={language === 'zh' ? '隐私与诊断' : 'Privacy & Diagnostics'}>
+        <div className="p-6 space-y-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-foreground">
+                {language === 'zh' ? '本地遥测' : 'Local telemetry'}
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                {language === 'zh'
+                  ? '记录会话摘要到 ~/.nohi/telemetry/ — 仅本地，不上传，可随时查看或删除。用于自我诊断与 bug 报告。'
+                  : 'Record per-session summaries to ~/.nohi/telemetry/. Local only — never uploaded. Useful for self-diagnostics and bug reports.'}
+              </p>
+            </div>
+            <Switch
+              checked={draft.telemetryEnabled ?? false}
+              onCheckedChange={(v) => { patch('telemetryEnabled', v); onSave({ ...draft, telemetryEnabled: v }) }}
+            />
+          </div>
+        </div>
+      </SettingsSection>
+
       {/* ── 6. Web Search ────────────────────────────────────────────── */}
       <SettingsSection title={language === 'zh' ? '网页搜索' : 'Web Search'}>
         <div className="p-6 space-y-3">

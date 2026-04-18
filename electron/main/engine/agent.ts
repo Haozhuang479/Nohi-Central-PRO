@@ -18,6 +18,7 @@ import { registerSubagentRunner } from './tools/task'
 import { registerBulkRunner } from './tools/bulkApply'
 import { runHooks } from './hooks/runner'
 import { dispatchToolCall } from './agent/dispatch'
+import { record as telemetry } from './lib/telemetry'
 import { mcpManager } from './mcp/client'
 import { buildSkillInjection } from './skills/loader'
 import { buildMemoryInjection } from './memory/store'
@@ -352,6 +353,14 @@ export async function* runAgent(
   activeSkills: Skill[],
   onEvent: (event: AgentEvent) => void
 ): AsyncGenerator<AgentEvent> {
+  // ── Telemetry: session bookkeeping (opt-in; no-op when disabled) ────────
+  const sessionStart = Date.now()
+  let tokensIn = 0
+  let tokensOut = 0
+  let toolCalls = 0
+  let toolErrors = 0
+  const telemetryProvider = detectProvider(session.model) ?? 'unknown'
+  telemetry({ event: 'session_start', sessionId: session.id, model: session.model, provider: telemetryProvider })
   // Register self as the subagent runner so the Task tool can spawn nested agents
   registerSubagentRunner(runAgent, activeSkills)
   registerBulkRunner(runAgent, activeSkills)
@@ -499,10 +508,14 @@ export async function* runAgent(
           continue
         }
 
+        const toolStart = Date.now()
         const outcome = await dispatchToolCall(
           { toolCallId: tc.id, toolName: tc.name, input },
           { allTools, workingDir, settings, onEvent },
         )
+        toolCalls++
+        if (outcome.isError) toolErrors++
+        telemetry({ event: 'tool_call', sessionId: session.id, name: tc.name, durationMs: Date.now() - toolStart, isError: outcome.isError })
         for (const ev of outcome.events) yield ev
         toolResultMsgs.push({ role: 'tool', tool_call_id: tc.id, content: outcome.output })
       }
@@ -645,12 +658,13 @@ export async function* runAgent(
         }
       } else if (chunk.type === 'message_delta') {
         if (chunk.usage) {
+          const usageIn = (chunk as unknown as { usage: { input_tokens: number; output_tokens: number } }).usage.input_tokens ?? 0
+          const usageOut = chunk.usage.output_tokens
+          tokensIn += usageIn
+          tokensOut += usageOut
           const event: AgentEvent = {
             type: 'message_complete',
-            usage: {
-              input_tokens: (chunk as unknown as { usage: { input_tokens: number; output_tokens: number } }).usage.input_tokens ?? 0,
-              output_tokens: chunk.usage.output_tokens,
-            },
+            usage: { input_tokens: usageIn, output_tokens: usageOut },
           }
           yield event
         }
@@ -688,10 +702,14 @@ export async function* runAgent(
     }> = []
 
     for (const toolCall of toolUseBlocks) {
+      const toolStart = Date.now()
       const outcome = await dispatchToolCall(
         { toolCallId: toolCall.id, toolName: toolCall.name, input: toolCall.input },
         { allTools, workingDir, settings, onEvent },
       )
+      toolCalls++
+      if (outcome.isError) toolErrors++
+      telemetry({ event: 'tool_call', sessionId: session.id, name: toolCall.name, durationMs: Date.now() - toolStart, isError: outcome.isError })
       for (const ev of outcome.events) yield ev
       toolResults.push({
         type: 'tool_result',
@@ -710,6 +728,13 @@ export async function* runAgent(
 
   // Stop hooks — observation only, fired after the agent loop completes
   runHooks('Stop', { workingDir: session.workingDir || settings.workingDir }, settings).catch(() => {})
+
+  telemetry({
+    event: 'session_end',
+    sessionId: session.id,
+    durationMs: Date.now() - sessionStart,
+    tokensIn, tokensOut, toolCalls, toolErrors,
+  })
 
   yield { type: 'done' }
 }

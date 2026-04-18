@@ -4,6 +4,7 @@ import { LanguageProvider } from '@/lib/language-context'
 import { ChannelStateProvider } from '@/lib/channel-state'
 import { Toaster } from '@/components/ui/sonner'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { CrashWatcher } from '@/components/crash-watcher'
 import { toast } from 'sonner'
 import type { NohiSettings } from '../electron/main/engine/types'
 
@@ -134,6 +135,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
+    <CrashWatcher />
     <LanguageProvider>
       <ChannelStateProvider>
         <HashRouter>
