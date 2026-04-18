@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { useLanguage } from "@/lib/language-context"
 import { useAIStore } from "@/store/ai-store"
+import { AttributionPanel } from "@/components/seller/attribution-panel"
 import {
   Bar,
   BarChart,
@@ -188,6 +189,9 @@ export default function AnalyticsPage() {
             : "Insights into how AI agents interact with your listings."}
         </p>
       </div>
+
+      {/* Attribution (real data from ~/.nohi/orders/) */}
+      <AttributionPanel />
 
       {/* AI Usage */}
       <div>

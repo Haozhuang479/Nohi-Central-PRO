@@ -50,6 +50,16 @@ contextBridge.exposeInMainWorld('nohi', {
     > => ipcRenderer.invoke('catalog:search', query, limit),
   },
 
+  // Attribution — shared by agent tools and the analytics dashboard
+  attribution: {
+    summary: (sinceDays?: number): Promise<
+      | { ok: true; summary: Record<string, unknown>; orderCount: number; windowDays: number }
+      | { ok: false; error: string }
+    > => ipcRenderer.invoke('attribution:summary', sinceDays),
+    ingest: (sinceDays?: number): Promise<{ ok: boolean; ingested?: number; errors?: string[]; error?: string }> =>
+      ipcRenderer.invoke('attribution:ingest', sinceDays),
+  },
+
   // Connectors (Layer 1 ingestion credentials)
   connectors: {
     list: (): Promise<Array<{ id: 'shopify' | 'gdrive'; name: string; connected: boolean; account?: string; connectedAt?: number; lastUsedAt?: number; lastError?: string }>> =>

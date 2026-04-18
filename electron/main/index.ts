@@ -392,6 +392,33 @@ ipcMain.handle('connectors:gdrive:disconnect', () => disconnectGDrive())
 
 // ── Catalog (shared by agent + seller UI) ───────────────────────────────
 import { searchRemote as catalogSearchRemote, resolveConfig as resolveCatalogConfig } from './engine/catalog/client'
+import { listOrders, summarize, ingestShopifyOrders } from './engine/layer4-distribution/attribution/orders'
+
+ipcMain.handle('attribution:summary', async (_e, sinceDays: unknown) => {
+  const days = typeof sinceDays === 'number' ? Math.min(Math.max(sinceDays, 1), 365) : 30
+  const settings = getSettings()
+  const merchantId = (settings as Record<string, unknown>).merchantId as string | undefined
+  try {
+    const orders = await listOrders({
+      since: Date.now() - days * 24 * 60 * 60 * 1000,
+      merchantId,
+    })
+    return { ok: true, summary: summarize(orders), orderCount: orders.length, windowDays: days }
+  } catch (err) {
+    logError(err, '[attribution:summary] failed')
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+})
+
+ipcMain.handle('attribution:ingest', async (_e, sinceDays: unknown) => {
+  const days = typeof sinceDays === 'number' ? Math.min(Math.max(sinceDays, 1), 365) : 30
+  const settings = getSettings()
+  const merchantId = (settings as Record<string, unknown>).merchantId as string | undefined
+  if (!merchantId) return { ok: false, error: 'merchantId not set (Settings → Agentic Catalog → Merchant ID).' }
+  const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+  const result = await ingestShopifyOrders({ merchantId, sinceIso, limit: 250 })
+  return { ok: result.errors.length === 0, ingested: result.ingested, errors: result.errors }
+})
 
 ipcMain.handle('catalog:search', async (_e, query: unknown, limit: unknown) => {
   if (typeof query !== 'string' || !query.trim()) {
