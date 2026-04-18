@@ -10,7 +10,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import type { OneIdProduct, PartialProduct } from './protocol'
-import { checksumProduct, OneIdProductSchema } from './protocol'
+import { checksumProduct, OneIdProductSchema, migrateProduct } from './protocol'
 import { createBearerClient, HttpError } from '../lib/http'
 
 const DEFAULT_API_BASE = 'https://nohi-product-search-1049263400892.us-west1.run.app/api'
@@ -53,7 +53,7 @@ async function readCache(oneId: string): Promise<OneIdProduct | null> {
   if (!existsSync(p)) return null
   try {
     const raw = await readFile(p, 'utf-8')
-    const parsed = OneIdProductSchema.safeParse(JSON.parse(raw))
+    const parsed = OneIdProductSchema.safeParse(migrateProduct(JSON.parse(raw)))
     return parsed.success ? parsed.data : null
   } catch {
     return null
@@ -116,7 +116,7 @@ export async function getRemote(cfg: CatalogConfig, oneId: string): Promise<OneI
     const data = await http(cfg).get<{ product?: unknown }>(`/products/${encodeURIComponent(oneId)}?merchant_id=${encodeURIComponent(cfg.merchantId)}`, {
       timeoutMs: 15_000,
     })
-    const parsed = OneIdProductSchema.safeParse(data.product ?? data)
+    const parsed = OneIdProductSchema.safeParse(migrateProduct((data.product ?? data) as Record<string, unknown>))
     return parsed.success ? parsed.data : null
   } catch (err) {
     if (err instanceof HttpError && (err.status === 404 || err.status === 405)) return null
@@ -166,6 +166,10 @@ export async function upsertProduct(cfg: CatalogConfig, partial: PartialProduct)
     createdAt: partial.createdAt ?? now,
     updatedAt: now,
     version: (partial.version ?? 0) + 1,
+    // Layer 4 fields (v0.2.0)
+    attribution: partial.attribution,
+    channelOverrides: partial.channelOverrides,
+    orderLinks: partial.orderLinks ?? [],
     custom: partial.custom,
   }
   full.checksum = checksumProduct({ ...full })
@@ -227,7 +231,7 @@ export async function listCached(): Promise<OneIdProduct[]> {
     if (!f.endsWith('.json')) continue
     try {
       const raw = await readFile(join(CACHE_DIR, f), 'utf-8')
-      const parsed = OneIdProductSchema.safeParse(JSON.parse(raw))
+      const parsed = OneIdProductSchema.safeParse(migrateProduct(JSON.parse(raw)))
       if (parsed.success) out.push(parsed.data)
     } catch { /* skip */ }
   }

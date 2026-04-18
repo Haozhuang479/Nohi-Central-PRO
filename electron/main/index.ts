@@ -98,6 +98,7 @@ app.whenReady().then(async () => {
   await mkdir(join(homedir(), '.nohi', 'automation'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'connectors'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'catalog'), { recursive: true })
+  await mkdir(join(homedir(), '.nohi', 'orders'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'logs'), { recursive: true })
   log('info', '[startup] Nohi Central PRO main process up')
 

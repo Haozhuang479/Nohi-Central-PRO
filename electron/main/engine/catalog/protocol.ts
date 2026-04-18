@@ -4,7 +4,10 @@
 
 import { z } from 'zod'
 
-export const NOHI_PROTOCOL_VERSION = '0.1.0'
+// v0.1.0 — initial OneID shape (title, media, variants, SEO, agent-native extras)
+// v0.2.0 — Layer 4 fields: attribution, channelOverrides, orderLinks
+export const NOHI_PROTOCOL_VERSION = '0.2.0'
+export const NOHI_PROTOCOL_VERSION_HISTORY = ['0.1.0', '0.2.0'] as const
 
 // ─── Core attribute schemas ───────────────────────────────────────────────
 
@@ -45,6 +48,62 @@ const SourceRefSchema = z.object({
   id: z.string().optional(), // upstream product id (e.g. shopify gid)
   url: z.string().url().optional(),
   ingestedAt: z.number(), // unix ms
+})
+
+// ─── Layer 4 — Distribution & Attribution (v0.2.0) ────────────────────────
+
+/**
+ * Channel classification drives how attribution is recorded:
+ * - owned:    Nohi-controlled surface (Skill / ChatGPT App / Storefront)
+ *             → order-level attribution + UTM source = 'nohi'
+ * - paid:     Nohi formats the feed, 3rd party renders (Meta DPA, Google PMax)
+ *             → UTM medium/campaign attribution
+ * - organic:  Public protocol, no Nohi-controlled metadata (ACP / UCP organic)
+ *             → no attribution claimed
+ */
+export const ChannelKindSchema = z.enum(['owned', 'paid', 'organic'])
+export type ChannelKind = z.infer<typeof ChannelKindSchema>
+
+/** A known channel id + its attribution class. Distribution tools reference these. */
+export const ChannelIdSchema = z.enum([
+  // Owned
+  'nohi-skill', 'nohi-chatgpt-app', 'nohi-storefront', 'nohi-mcp',
+  // Paid external
+  'meta-feed', 'google-merchant', 'reddit-dpa', 'tiktok-shop',
+  // Organic protocol
+  'acp', 'ucp',
+])
+export type ChannelId = z.infer<typeof ChannelIdSchema>
+
+/** Per-channel overrides for title/description/image/price — lets feeds differ from canonical. */
+const ChannelOverrideSchema = z.object({
+  title: z.string().max(500).optional(),
+  description: z.string().optional(),
+  image: MediaSchema.optional(),
+  price: MoneySchema.optional(),
+  available: z.boolean().optional(),
+  customData: z.record(z.string(), z.unknown()).optional(),
+})
+
+/** UTM trio baked into a product's outbound URLs when pushed through a channel. */
+const AttributionSchema = z.object({
+  utm_source: z.string().max(200).optional(),
+  utm_medium: z.string().max(200).optional(),
+  utm_campaign: z.string().max(200).optional(),
+  utm_term: z.string().max(200).optional(),
+  utm_content: z.string().max(200).optional(),
+})
+
+/** One recorded order that referenced this product — populated by the order ingester. */
+const OrderLinkSchema = z.object({
+  orderId: z.string(),
+  channelId: ChannelIdSchema.optional(), // may be unknown if attribution couldn't be resolved
+  amount: MoneySchema,
+  quantity: z.number().int().min(1),
+  timestamp: z.number(),
+  utmSource: z.string().optional(),
+  utmMedium: z.string().optional(),
+  utmCampaign: z.string().optional(),
 })
 
 // ─── OneID Product schema ─────────────────────────────────────────────────
@@ -105,6 +164,14 @@ export const OneIdProductSchema = z.object({
   updatedAt: z.number(),
   version: z.number().int().default(1),
   checksum: z.string().optional(),
+
+  // ── Layer 4 additions (v0.2.0) ──
+  /** Default UTM tags stamped on this product's outbound URLs (channel-level overrides apply). */
+  attribution: AttributionSchema.optional(),
+  /** Per-channel field overrides. Keyed by ChannelId. */
+  channelOverrides: z.record(ChannelIdSchema, ChannelOverrideSchema).optional(),
+  /** Orders that referenced this product. Append-only; populated by the order ingester. */
+  orderLinks: z.array(OrderLinkSchema).default([]),
 
   // Free-form for forward-compat
   custom: z.record(z.string(), z.unknown()).optional(),
@@ -182,6 +249,28 @@ export function catalogReadinessScore(p: OneIdProduct): number {
   const total = weights.reduce((s, [, w]) => s + w, 0)
   const got = weights.reduce((s, [ok, w]) => s + (ok ? w : 0), 0)
   return Math.round((got / total) * 100)
+}
+
+// ─── Migrations ────────────────────────────────────────────────────────────
+
+/**
+ * Upgrade an older OneID record to the current protocol version, non-destructively.
+ * Safe to run on any record — if already current, it's a no-op.
+ *
+ * Run on every load from the local cache so the app never has to deal with mixed versions.
+ */
+export function migrateProduct(raw: Record<string, unknown>): Record<string, unknown> {
+  const version = raw.protocolVersion ?? '0.1.0'
+  const out = { ...raw }
+
+  // v0.1.0 → v0.2.0: add the Layer 4 fields as empty defaults.
+  if (version === '0.1.0' || version === undefined) {
+    if (out.orderLinks === undefined) out.orderLinks = []
+    // attribution + channelOverrides stay undefined (optional)
+    out.protocolVersion = '0.2.0'
+  }
+
+  return out
 }
 
 /** Compute a checksum so catalog_diff can detect real changes cheaply. */

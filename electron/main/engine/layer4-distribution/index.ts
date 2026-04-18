@@ -1,29 +1,55 @@
 // Layer 4 — Protocol & Distribution
 //
-// Role: push OneID products out to external platforms (Meta, Google Merchant, Reddit,
-// ACP, UCP) and Nohi-native channels (Skill bundle, ChatGPT App, Conversational
-// Storefront). Tag with UTM / channel metadata. Ingest order webhooks to calculate
-// attribution.
+// Phase 4 (v2.3): attribution infrastructure + schema + placeholder distribution
+// tools are live. Real feed generators arrive in Phase 6.
 //
-// Scope today: **none shipped yet.** This module is a placeholder to reserve the
-// architectural slot so Phase 4 tool additions land coherently.
-//
-// Planned tools (P1):
-//   - distribute_meta_feed
-//   - distribute_google_merchant
-//   - distribute_reddit_dpa
-//   - distribute_acp (pending spec)
-//   - distribute_ucp (pending spec)
-//   - nohi_skill_export (generate a Nohi Skill bundle for any agent to shop)
-//   - nohi_mcp_register (expose merchant catalog as an MCP endpoint)
-//   - analyze_attribution (after order webhooks + UTM model land)
-//
-// Planned infrastructure:
-//   - layer4-distribution/attribution/orders.ts (Shopify order webhook ingestor)
-//   - layer4-distribution/attribution/scorer.ts (GMV by channel, AOV, etc.)
-//   - layer4-distribution/feed/generator.ts (shared feed builder)
-//   - layer4-distribution/feed/adapters/{meta,google,reddit,acp,ucp}.ts
+// Architecture:
+//   attribution/       — NohiOrder type, Shopify ingest, summarize(), analyze tool (REAL)
+//   feed/              — Meta / Google / Reddit / ACP / UCP feed generators (STUBS)
+//   native/            — Nohi Skill bundle export + MCP server registration (STUBS)
 
+export {
+  NohiOrderSchema,
+  ingestShopifyOrders,
+  listOrders,
+  summarize,
+  type NohiOrder,
+  type AttributionSummary,
+  type OrderFilter,
+} from './attribution/orders'
+
+export { IngestOrdersTool, AnalyzeAttributionTool } from './attribution/tools'
+export {
+  DistributeMetaFeedTool,
+  DistributeGoogleMerchantTool,
+  DistributeRedditDpaTool,
+  DistributeAcpTool,
+  DistributeUcpTool,
+} from './feed/tools'
+export { NohiSkillExportTool, NohiMcpRegisterTool } from './native/tools'
+
+import { IngestOrdersTool, AnalyzeAttributionTool } from './attribution/tools'
+import {
+  DistributeMetaFeedTool,
+  DistributeGoogleMerchantTool,
+  DistributeRedditDpaTool,
+  DistributeAcpTool,
+  DistributeUcpTool,
+} from './feed/tools'
+import { NohiSkillExportTool, NohiMcpRegisterTool } from './native/tools'
 import type { ToolDef } from '../types'
 
-export const LAYER4_TOOLS: ToolDef[] = []
+export const LAYER4_TOOLS: ToolDef[] = [
+  // Attribution — real implementations
+  IngestOrdersTool,
+  AnalyzeAttributionTool,
+  // Distribution — stubs pending Phase 6
+  DistributeMetaFeedTool,
+  DistributeGoogleMerchantTool,
+  DistributeRedditDpaTool,
+  DistributeAcpTool,
+  DistributeUcpTool,
+  // Native Nohi channels — stubs pending Phase 6
+  NohiSkillExportTool,
+  NohiMcpRegisterTool,
+]
