@@ -25,6 +25,8 @@ Nohi Central PRO is an Electron 32 app with three processes:
 
 ## Directory layout
 
+Since v2.2.0 the engine groups code by **Nohi 6-layer architecture position** via `layerN-*/index.ts` barrel modules. Files still live in their historical locations (`tools/`, `catalog/`, `connectors/`) so imports don't break, but the layer barrels are the canonical entry points for new code.
+
 ```
 electron/
 ├── main/
@@ -34,6 +36,25 @@ electron/
 │       ├── types.ts                   # Shared types (Renderer + Main)
 │       ├── ipc-schemas.ts             # Zod schemas for IPC inputs
 │       ├── agent.ts                   # Dual-path agent loop (Anthropic + OpenAI-compat)
+│       │
+│       ├── layer1-ingestion/
+│       │   └── index.ts               # Shopify + Drive connectors and their 8 tools
+│       ├── layer2-execution/
+│       │   └── index.ts               # Extract, image gen, bulk_apply — 5 tools
+│       ├── layer3-catalog/
+│       │   └── index.ts               # OneID schema, catalog client, 5 catalog_* tools
+│       ├── layer4-distribution/
+│       │   └── index.ts               # Placeholder — Phase 4 distribution + attribution
+│       ├── layer5-rendering/
+│       │   └── index.ts               # Placeholder — Phase 5 product cards
+│       │
+│       ├── lib/
+│       │   ├── logger.ts              # Rolling file logger at ~/.nohi/logs/
+│       │   ├── http.ts                # Shared HTTP client factory
+│       │   └── settings-view.ts       # Namespaced read view over NohiSettings
+│       │
+│       ├── agent/
+│       │   └── dispatch.ts            # Shared tool-call dispatch (used by both branches)
 │       ├── tools/
 │       │   ├── index.ts               # ALL_TOOLS array
 │       │   ├── bash.ts                # Shell execution

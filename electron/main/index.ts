@@ -339,6 +339,29 @@ ipcMain.handle('connectors:gdrive:connect', async (_e, clientId: unknown, client
 })
 ipcMain.handle('connectors:gdrive:disconnect', () => disconnectGDrive())
 
+// ── Catalog (shared by agent + seller UI) ───────────────────────────────
+import { searchRemote as catalogSearchRemote, resolveConfig as resolveCatalogConfig } from './engine/catalog/client'
+
+ipcMain.handle('catalog:search', async (_e, query: unknown, limit: unknown) => {
+  if (typeof query !== 'string' || !query.trim()) {
+    return { ok: false, error: 'query must be a non-empty string', results: [] }
+  }
+  const n = typeof limit === 'number' ? Math.min(Math.max(limit, 1), 50) : 20
+  try {
+    const settings = getSettings()
+    const cfg = resolveCatalogConfig({
+      catalogApiUrl: (settings as Record<string, unknown>).catalogApiUrl as string | undefined,
+      catalogApiToken: (settings as Record<string, unknown>).catalogApiToken as string | undefined,
+      merchantId: (settings as Record<string, unknown>).merchantId as string | undefined,
+    })
+    const results = await catalogSearchRemote(cfg, query, n)
+    return { ok: true, results, query, total: results.length }
+  } catch (err) {
+    logError(err, '[catalog:search] failed')
+    return { ok: false, error: err instanceof Error ? err.message : String(err), results: [] }
+  }
+})
+
 // MCP status
 ipcMain.handle('mcp:status', () => mcpManager.getStatuses())
 ipcMain.handle('mcp:tools', (_e, serverId: string) => mcpManager.getServerTools(serverId))

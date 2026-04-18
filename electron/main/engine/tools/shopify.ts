@@ -1,7 +1,7 @@
 // Shopify tools — agent-facing wrappers around the Shopify Admin API connector.
 
 import type { ToolDef, ToolResult } from '../types'
-import { listProducts, getProduct, updateProduct, getOrders, getInventoryLevels, getShopifyCreds } from '../connectors/shopify'
+import { listProducts, getProduct, updateProduct, getOrders, getInventoryLevels, getShopifyCreds, shopifyProductToPartial } from '../connectors/shopify'
 
 async function assertConnected(): Promise<{ error: string } | null> {
   const creds = await getShopifyCreds()
@@ -46,18 +46,30 @@ export const ShopifyListProductsTool: ToolDef = {
 
 export const ShopifyGetProductTool: ToolDef = {
   name: 'shopify_get_product',
-  description: 'Fetch a single Shopify product\'s full details (description, variants, images, tags).',
+  description:
+    'Fetch a single Shopify product\'s full details (description, variants, images, tags). Set `as_oneid: true` to receive the product already converted to the Nohi OneID partial shape — use this when you\'re about to call `catalog_upsert_product`, it saves you from hand-reconstructing the mapping.',
   inputSchema: {
     type: 'object',
     properties: {
       id: { type: 'string', description: 'Shopify product numeric id.' },
+      as_oneid: {
+        type: 'boolean',
+        description: 'If true, convert the Shopify product to a PartialProduct (OneID-shaped) ready for catalog_upsert_product. Uses the merchantId from settings.',
+      },
     },
     required: ['id'],
   },
-  async call(input): Promise<ToolResult> {
+  async call(input, opts): Promise<ToolResult> {
     const guard = await assertConnected(); if (guard) return guard
     try {
       const product = await getProduct(input.id as string)
+      if (input.as_oneid) {
+        const creds = await getShopifyCreds()
+        const merchantId = (opts.settings as Record<string, unknown> | undefined)?.merchantId as string | undefined
+        if (!merchantId) return { error: 'as_oneid requires merchantId in settings (Settings → Agentic Catalog → Merchant ID).' }
+        const partial = shopifyProductToPartial(product, merchantId, creds?.shop ?? 'unknown')
+        return { output: JSON.stringify(partial, null, 2) }
+      }
       return { output: JSON.stringify(product, null, 2) }
     } catch (err) {
       return { error: err instanceof Error ? err.message : String(err) }

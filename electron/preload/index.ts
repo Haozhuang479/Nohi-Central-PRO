@@ -42,6 +42,14 @@ contextBridge.exposeInMainWorld('nohi', {
     tools: (serverId: string): Promise<string[]> => ipcRenderer.invoke('mcp:tools', serverId),
   },
 
+  // Catalog — the shared Agentic Catalog client (used by both agent tools and seller UI)
+  catalog: {
+    search: (query: string, limit?: number): Promise<
+      | { ok: true; results: Array<Record<string, unknown>>; total: number; query: string }
+      | { ok: false; error: string; results: [] }
+    > => ipcRenderer.invoke('catalog:search', query, limit),
+  },
+
   // Connectors (Layer 1 ingestion credentials)
   connectors: {
     list: (): Promise<Array<{ id: 'shopify' | 'gdrive'; name: string; connected: boolean; account?: string; connectedAt?: number; lastUsedAt?: number; lastError?: string }>> =>

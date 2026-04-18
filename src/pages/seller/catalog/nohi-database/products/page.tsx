@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Search } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useLanguage } from "@/lib/language-context"
-import { searchProducts, type NohiProduct } from "@/lib/nohi-api"
+import { searchProducts, type NohiProduct } from "@/lib/catalog"
 
 function SkeletonCard() {
   return (

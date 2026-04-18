@@ -21,14 +21,9 @@ Paginate through Shopify products with `shopify_list_products`. Use `limit: 250`
 ## 3. Convert + upsert into the catalog
 
 For each Shopify product:
-- Call `shopify_get_product` to fetch full details (variants, images, tags, HTML description)
-- Construct a OneID product record (the connector's `shopifyProductToPartial` helper, described in the Shopify connector, is the canonical mapping — mirror its shape):
-  - `oneId`: `shopify-<shop>-<id>`
-  - `merchantId`: from settings
-  - `title`, `handle`, `descriptionHtml`, `description` (stripped text), `vendor`, `brand`, `productType`, `category`, `tags`, `media[]`, `featuredImage`, `price`, `variants[]`, `totalInventory`
-  - `sources: [{ system: 'shopify', id, url, ingestedAt: now }]`
+- Call `shopify_get_product` with `as_oneid: true` — the tool returns a PartialProduct already mapped into the OneID shape (saves you 30+ lines of hand-mapping per product and eliminates drift). Requires `merchantId` in settings.
 - Validate with `catalog_validate_protocol`. If there are **errors**, skip and record; if there are **warnings**, upsert anyway.
-- Call `catalog_upsert_product`
+- Call `catalog_upsert_product` with the PartialProduct.
 
 For >20 products, prefer `bulk_apply` with a prompt template like:
 
