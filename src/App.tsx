@@ -14,6 +14,7 @@ const ChatLayout = lazy(() =>
 const ChatPage = lazy(() => import('@/pages/chat/page'))
 const ChatSkillsPage = lazy(() => import('@/pages/chat/skills'))
 const ChatMcpPage = lazy(() => import('@/pages/chat/mcp'))
+const ChatAutomationPage = lazy(() => import('@/pages/chat/automation'))
 
 const SellerLayout = lazy(() =>
   import('@/pages/seller/layout').then((m) => ({ default: m.SellerLayout }))
@@ -142,6 +143,7 @@ export default function App() {
               >
                 <Route index element={<ChatPage settings={settings!} />} />
                 <Route path="skills" element={<ChatSkillsPage />} />
+                <Route path="automation" element={<ChatAutomationPage />} />
                 <Route
                   path="mcp"
                   element={
