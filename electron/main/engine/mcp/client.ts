@@ -4,6 +4,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import type { McpServerConfig, ToolDef, ToolResult, ToolCallOpts } from '../types'
+import { log, logError } from '../lib/logger'
 
 interface McpToolMeta {
   serverName: string
@@ -17,6 +18,8 @@ export class McpClientManager {
   private clients = new Map<string, Client>()
   private toolMetas: McpToolMeta[] = []
   private statuses = new Map<string, 'connected' | 'disconnected' | 'error'>()
+  private lastErrors = new Map<string, string>()
+  private serverNames = new Map<string, string>()
 
   async connect(configs: McpServerConfig[]): Promise<void> {
     // Disconnect any removed servers
@@ -29,6 +32,7 @@ export class McpClientManager {
 
     // Connect new/updated enabled servers
     for (const config of configs.filter((c) => c.enabled)) {
+      this.serverNames.set(config.id, config.name)
       if (this.clients.has(config.id)) continue
       try {
         const transport = new StdioClientTransport({
@@ -40,10 +44,13 @@ export class McpClientManager {
         await client.connect(transport)
         this.clients.set(config.id, client)
         this.statuses.set(config.id, 'connected')
-        console.log(`[MCP] Connected to ${config.name}`)
+        this.lastErrors.delete(config.id)
+        log('info', `[mcp] Connected to ${config.name}`)
       } catch (err) {
         this.statuses.set(config.id, 'error')
-        console.error(`[MCP] Failed to connect to ${config.name}:`, err)
+        const e = err as { message?: string; code?: string }
+        this.lastErrors.set(config.id, e.message ?? String(err))
+        logError(err, `[mcp] Failed to connect to ${config.name}`)
       }
     }
 
@@ -67,7 +74,7 @@ export class McpClientManager {
           })
         }
       } catch (err) {
-        console.error(`[MCP] Failed to list tools for ${config.name}:`, err)
+        logError(err, `[mcp] Failed to list tools for ${config.name}`)
       }
     }
   }
@@ -80,7 +87,13 @@ export class McpClientManager {
 
       call: async (input: Record<string, unknown>, _opts: ToolCallOpts): Promise<ToolResult> => {
         const client = this.clients.get(meta.serverId)
-        if (!client) return { error: `MCP server "${meta.serverName}" not connected` }
+        if (!client) {
+          const lastErr = this.lastErrors.get(meta.serverId)
+          const lastErrText = lastErr ? ` (last error: ${lastErr})` : ''
+          return {
+            error: `MCP server "${meta.serverName}" is not connected${lastErrText}. Open Settings → MCP and reconnect, or check the server's command/env vars.`,
+          }
+        }
         try {
           const result = await client.callTool({ name: meta.toolName, arguments: input })
           const content = result.content as Array<{ type: string; text?: string }>
@@ -88,10 +101,21 @@ export class McpClientManager {
             .filter((c) => c.type === 'text')
             .map((c) => c.text ?? '')
             .join('\n')
-          return result.isError ? { error: text } : { output: text }
+          if (result.isError) {
+            // Tool itself reported an error — surface verbatim with server context.
+            return { error: `[${meta.serverName} → ${meta.toolName}] ${text}` }
+          }
+          return { output: text }
         } catch (err: unknown) {
-          const e = err as { message?: string }
-          return { error: e.message ?? 'MCP tool call failed' }
+          const e = err as { message?: string; code?: string | number }
+          // Mark the server as errored so subsequent calls give the disconnect hint.
+          this.lastErrors.set(meta.serverId, e.message ?? 'unknown')
+          this.statuses.set(meta.serverId, 'error')
+          logError(err, `[mcp] tool call failed: ${meta.serverName}.${meta.toolName}`)
+          const codeHint = e.code ? ` (code ${e.code})` : ''
+          return {
+            error: `MCP tool "${meta.serverName}.${meta.toolName}" failed${codeHint}: ${e.message ?? 'unknown error'}. The server may have crashed — try Settings → MCP → Reconnect.`,
+          }
         }
       },
     }))

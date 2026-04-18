@@ -6,8 +6,13 @@ import { spawn } from 'child_process'
 import { is } from '@electron-toolkit/utils'
 
 import type { Session, Skill, NohiSettings } from './engine/types'
-import { getSettings, saveSettings } from './store'
+import { getSettings, saveSettings, getLastSettingsError } from './store'
 import { runAgent } from './engine/agent'
+import { log, logError } from './engine/lib/logger'
+
+// Global crash safety net — without this, uncaught errors silently kill the process.
+process.on('uncaughtException', (err) => logError(err, '[uncaughtException]'))
+process.on('unhandledRejection', (reason) => logError(reason, '[unhandledRejection]'))
 import {
   saveSession,
   loadSession,
@@ -93,6 +98,8 @@ app.whenReady().then(async () => {
   await mkdir(join(homedir(), '.nohi', 'automation'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'connectors'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'catalog'), { recursive: true })
+  await mkdir(join(homedir(), '.nohi', 'logs'), { recursive: true })
+  log('info', '[startup] Nohi Central PRO main process up')
 
   // Register custom protocol to serve local images in the renderer.
   // Restricted to ~/.nohi/ subtree only — no access to ~/.ssh, ~/.aws/credentials, etc.
@@ -138,12 +145,21 @@ app.on('window-all-closed', async () => {
 ipcMain.handle('settings:get', () => getSettings())
 ipcMain.handle('settings:save', async (_e, raw: unknown) => {
   const settings = safeParseIpc(NohiSettingsSchema, raw, 'settings:save') as NohiSettings
-  saveSettings(settings)
+  // saveSettings now throws on disk errors; we surface the message to the renderer.
+  try {
+    saveSettings(settings)
+  } catch (err) {
+    const e = err as { code?: string; message?: string }
+    return { ok: false, error: getLastSettingsError()?.message ?? e.message ?? 'Failed to save settings' }
+  }
   await reloadSkills()
   if (settings.mcpServers.length > 0) {
-    await mcpManager.connect(settings.mcpServers).catch(console.error)
+    await mcpManager.connect(settings.mcpServers).catch((e) => logError(e, '[mcp] reconnect after settings save failed'))
   }
+  return { ok: true }
 })
+
+ipcMain.handle('settings:lastError', () => getLastSettingsError())
 
 // Sessions
 ipcMain.handle('sessions:list', () => listSessions())

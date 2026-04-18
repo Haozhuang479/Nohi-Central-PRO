@@ -112,15 +112,20 @@ export const WebSearchTool: ToolDef = {
 
     // Try Brave Search first if API key available
     const braveKey = opts.settings?.braveSearchApiKey || process.env.BRAVE_SEARCH_API_KEY
+    let braveErrorNote = ''
     if (braveKey) {
       try {
         const results = await braveSearch(query, count, braveKey)
         if (results.length > 0) {
-          return { output: formatResults(results, query) }
+          return { output: formatResults(results, query, 'Brave') }
         }
+        braveErrorNote = '> Brave returned 0 results — falling back to DuckDuckGo.\n\n'
       } catch (err) {
-        console.error('[WebSearch] Brave failed, falling back to DuckDuckGo:', (err as Error).message)
-        // Fall through to DuckDuckGo
+        const msg = (err as Error).message
+        // Visible to the user in the tool output, not just console.
+        if (msg.includes('429')) braveErrorNote = '> Brave Search hit rate limit (429) — falling back to DuckDuckGo.\n\n'
+        else if (msg.includes('401') || msg.includes('403')) braveErrorNote = '> Brave Search rejected the API key — falling back to DuckDuckGo. Check the key in Settings.\n\n'
+        else braveErrorNote = `> Brave Search failed (${msg}) — falling back to DuckDuckGo.\n\n`
       }
     }
 
@@ -128,18 +133,18 @@ export const WebSearchTool: ToolDef = {
     try {
       const results = await duckDuckGoSearch(query, count)
       if (results.length > 0) {
-        return { output: formatResults(results, query) }
+        return { output: braveErrorNote + formatResults(results, query, braveKey ? 'DuckDuckGo (fallback)' : 'DuckDuckGo') }
       }
-      return { output: `No results found for "${query}".${!braveKey ? ' Tip: add a Brave Search API key in Settings for better results.' : ''}` }
+      return { output: braveErrorNote + `No results found for "${query}".${!braveKey ? ' Tip: add a Brave Search API key in Settings for better results.' : ''}` }
     } catch (err: unknown) {
       const e = err as { message?: string }
-      return { error: `Search failed: ${e.message ?? 'Unknown error'}` }
+      return { error: braveErrorNote + `Search failed: ${e.message ?? 'Unknown error'}` }
     }
   },
 }
 
-function formatResults(results: SearchResult[], query: string): string {
-  const header = `Search results for "${query}" (${results.length} results):\n`
+function formatResults(results: SearchResult[], query: string, source: string): string {
+  const header = `Search results for "${query}" via ${source} (${results.length} results):\n`
   const formatted = results
     .map((r, i) => `${i + 1}. **${r.title}**\n   ${r.url}\n   ${r.snippet}`)
     .join('\n\n')

@@ -4,6 +4,7 @@ import { LanguageProvider } from '@/lib/language-context'
 import { ChannelStateProvider } from '@/lib/channel-state'
 import { Toaster } from '@/components/ui/sonner'
 import { ErrorBoundary } from '@/components/error-boundary'
+import { toast } from 'sonner'
 import type { NohiSettings } from '../electron/main/engine/types'
 
 // ── Lazy page imports ─────────────────────────────────────────────────────────
@@ -107,7 +108,11 @@ export default function App() {
   }, [])
 
   const handleSettingsSave = async (s: NohiSettings) => {
-    await window.nohi.settings.save(s)
+    const result = await window.nohi.settings.save(s)
+    if (result && 'ok' in result && !result.ok) {
+      toast.error(result.error, { duration: 8000 })
+      return
+    }
     setSettings(s)
   }
 

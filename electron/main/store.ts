@@ -1,8 +1,9 @@
 // Simple synchronous JSON settings store (replaces electron-store)
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import type { NohiSettings } from './engine/types'
+import { log, logError } from './engine/lib/logger'
 
 const CONFIG_DIR = join(homedir(), '.nohi')
 const CONFIG_FILE = join(CONFIG_DIR, 'settings.json')
@@ -103,13 +104,44 @@ export function getSettings(): NohiSettings {
       }
       return { ...DEFAULTS, ...parsed }
     }
-  } catch {
-    // Corrupt config — use defaults
+  } catch (err) {
+    logError(err, '[store] settings.json corrupt — falling back to defaults')
   }
   return { ...DEFAULTS }
 }
 
+// Last save error — exposed via IPC so the renderer can show a toast.
+let lastSaveError: { message: string; timestamp: number; path: string } | null = null
+
+export function getLastSettingsError(): { message: string; timestamp: number; path: string } | null {
+  return lastSaveError
+}
+
+/** Save settings atomically (temp file + rename). Throws on failure so callers can react. */
 export function saveSettings(settings: NohiSettings): void {
-  ensureDir()
-  writeFileSync(CONFIG_FILE, JSON.stringify(settings, null, 2), 'utf-8')
+  try {
+    ensureDir()
+    const json = JSON.stringify(settings, null, 2)
+    // Atomic write: write to temp, then rename. Avoids half-written settings on crash.
+    const tmp = `${CONFIG_FILE}.tmp.${process.pid}`
+    writeFileSync(tmp, json, 'utf-8')
+    renameSync(tmp, CONFIG_FILE)
+    lastSaveError = null
+    log('debug', '[store] settings saved')
+  } catch (err) {
+    const e = err as { code?: string; message?: string }
+    lastSaveError = {
+      message: e.code === 'EACCES'
+        ? `Cannot write settings — ~/.nohi/ is not writable. Check permissions on ${CONFIG_DIR}.`
+        : e.code === 'ENOSPC'
+          ? 'Cannot write settings — disk is full.'
+          : e.code === 'EROFS'
+            ? `Cannot write settings — ~/.nohi/ is on a read-only filesystem.`
+            : `Failed to save settings: ${e.message ?? String(err)}`,
+      timestamp: Date.now(),
+      path: CONFIG_FILE,
+    }
+    logError(err, '[store] saveSettings failed')
+    throw err
+  }
 }

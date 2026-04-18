@@ -7,7 +7,10 @@ contextBridge.exposeInMainWorld('nohi', {
   // Settings
   settings: {
     get: (): Promise<NohiSettings> => ipcRenderer.invoke('settings:get'),
-    save: (settings: NohiSettings): Promise<void> => ipcRenderer.invoke('settings:save', settings),
+    save: (settings: NohiSettings): Promise<{ ok: true } | { ok: false; error: string }> =>
+      ipcRenderer.invoke('settings:save', settings),
+    lastError: (): Promise<{ message: string; timestamp: number; path: string } | null> =>
+      ipcRenderer.invoke('settings:lastError'),
   },
 
   // Sessions

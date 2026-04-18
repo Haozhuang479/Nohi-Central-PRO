@@ -485,7 +485,18 @@ export async function* runAgent(
       const toolResultMsgs: unknown[] = []
       for (const tc of toolCallEntries) {
         let input: Record<string, unknown> = {}
-        try { input = JSON.parse(tc.args) } catch { /* ignore */ }
+        let parseError: string | null = null
+        try {
+          input = JSON.parse(tc.args || '{}')
+        } catch (err) {
+          parseError = err instanceof Error ? err.message : String(err)
+        }
+        if (parseError) {
+          const msg = `Tool input was malformed JSON (${parseError}). Raw: ${tc.args.slice(0, 500)}`
+          yield { type: 'tool_result', id: tc.id, name: tc.name, output: msg, isError: true }
+          toolResultMsgs.push({ role: 'tool', tool_call_id: tc.id, content: msg })
+          continue
+        }
 
         const tool = allTools.find((t) => t.name === tc.name)
         if (!tool) {
@@ -624,16 +635,27 @@ export async function* runAgent(
         }
         if (currentToolBlock) {
           let input: Record<string, unknown> = {}
+          let parseError: string | null = null
           try {
-            input = JSON.parse(currentToolBlock.inputJson)
-          } catch {
-            // Malformed input
+            // An empty inputJson means the tool takes no arguments — that's fine, treat as {}.
+            const raw = currentToolBlock.inputJson.trim() || '{}'
+            input = JSON.parse(raw)
+          } catch (err) {
+            parseError = err instanceof Error ? err.message : String(err)
+            // Surface to the user via a tool_result event so the agent loop can self-correct
+            yield {
+              type: 'tool_result',
+              id: currentToolBlock.id,
+              name: currentToolBlock.name,
+              output: `Tool input was malformed JSON (${parseError}). Raw input was: ${currentToolBlock.inputJson.slice(0, 500)}`,
+              isError: true,
+            }
           }
           assistantBlocks.push({
             type: 'tool_use',
             id: currentToolBlock.id,
             name: currentToolBlock.name,
-            input,
+            input: parseError ? { __malformed: true, __error: parseError } : input,
           })
           currentToolBlock = null
         }
