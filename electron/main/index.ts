@@ -17,6 +17,16 @@ import {
 } from './engine/sessions/history'
 import { loadSkillsFromDir, setToolkitDir } from './engine/skills/loader'
 import { mcpManager } from './engine/mcp/client'
+import {
+  NohiSettingsSchema,
+  SessionSchema,
+  CreateSessionSchema,
+  SkillCreateSchema,
+  SkillUpdateSchema,
+  AutomationCreateSchema,
+  AutomationUpdateSchema,
+  safeParseIpc,
+} from './engine/ipc-schemas'
 
 // ─── Built-in skills directory ─────────────────────────────────────────────
 
@@ -82,15 +92,22 @@ app.whenReady().then(async () => {
   await mkdir(join(homedir(), '.nohi', 'images'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'automation'), { recursive: true })
 
-  // Register custom protocol to serve local images in the renderer
+  // Register custom protocol to serve local images in the renderer.
+  // Restricted to ~/.nohi/ subtree only — no access to ~/.ssh, ~/.aws/credentials, etc.
   protocol.handle('nohi-file', (request) => {
-    const filePath = decodeURIComponent(request.url.replace('nohi-file://', ''))
-    // Only allow serving files from ~/.nohi/images/ or the user's home directory
-    const nohiImages = join(homedir(), '.nohi', 'images')
-    if (!filePath.startsWith(nohiImages) && !filePath.startsWith(homedir())) {
+    const raw = decodeURIComponent(request.url.replace('nohi-file://', ''))
+    const nohiRoot = join(homedir(), '.nohi')
+    // Resolve to canonical absolute path and check it stays under ~/.nohi/
+    let resolved: string
+    try {
+      resolved = require('path').resolve(raw)
+    } catch {
+      return new Response('Bad request', { status: 400 })
+    }
+    if (!resolved.startsWith(nohiRoot)) {
       return new Response('Forbidden', { status: 403 })
     }
-    return net.fetch(`file://${filePath}`)
+    return net.fetch(`file://${resolved}`)
   })
   setToolkitDir(SHOPIFY_TOOLKIT_DIR)
   await reloadSkills()
@@ -117,7 +134,8 @@ app.on('window-all-closed', async () => {
 
 // Settings
 ipcMain.handle('settings:get', () => getSettings())
-ipcMain.handle('settings:save', async (_e, settings: NohiSettings) => {
+ipcMain.handle('settings:save', async (_e, raw: unknown) => {
+  const settings = safeParseIpc(NohiSettingsSchema, raw, 'settings:save') as NohiSettings
   saveSettings(settings)
   await reloadSkills()
   if (settings.mcpServers.length > 0) {
@@ -128,11 +146,18 @@ ipcMain.handle('settings:save', async (_e, settings: NohiSettings) => {
 // Sessions
 ipcMain.handle('sessions:list', () => listSessions())
 ipcMain.handle('sessions:load', (_e, id: string) => loadSession(id))
-ipcMain.handle('sessions:save', (_e, session: Session) => saveSession(session))
-ipcMain.handle('sessions:delete', (_e, id: string) => deleteSession(id))
-ipcMain.handle('sessions:create', (_e, model: string, workingDir?: string) => {
+ipcMain.handle('sessions:save', (_e, raw: unknown) => {
+  const session = safeParseIpc(SessionSchema, raw, 'sessions:save') as Session
+  return saveSession(session)
+})
+ipcMain.handle('sessions:delete', (_e, id: unknown) => {
+  if (typeof id !== 'string' || id.length === 0 || id.length > 200) throw new Error('[IPC sessions:delete] invalid id')
+  return deleteSession(id)
+})
+ipcMain.handle('sessions:create', (_e, model: unknown, workingDir?: unknown) => {
+  const parsed = safeParseIpc(CreateSessionSchema, { model, workingDir }, 'sessions:create')
   const settings = getSettings()
-  return createSession(model ?? settings.defaultModel, workingDir ?? settings.workingDir)
+  return createSession(parsed.model ?? settings.defaultModel, parsed.workingDir ?? settings.workingDir)
 })
 
 // Skills
@@ -149,21 +174,28 @@ ipcMain.handle('skills:toggle', async (_e, id: string, enabled: boolean) => {
   return activeSkills
 })
 
-ipcMain.handle('skills:create', async (_e, data: { name: string; description: string; trigger: string; content: string }) => {
+// Escape YAML special chars in skill frontmatter (colons, newlines, quotes)
+function yamlSafe(s: string): string {
+  return s.replace(/\r?\n/g, ' ').replace(/"/g, '\\"').slice(0, 500)
+}
+
+ipcMain.handle('skills:create', async (_e, raw: unknown) => {
+  const data = safeParseIpc(SkillCreateSchema, raw, 'skills:create')
   const settings = getSettings()
   const id = data.name.replace(/[^a-zA-Z0-9-]/g, '-').toLowerCase()
   const filePath = join(settings.skillsDir || join(homedir(), '.nohi', 'skills'), `${id}.md`)
-  const md = `---\nname: ${data.name}\ndescription: ${data.description}\ntrigger: "${data.trigger}"\n---\n\n${data.content}\n`
+  const md = `---\nname: "${yamlSafe(data.name)}"\ndescription: "${yamlSafe(data.description)}"\ntrigger: "${yamlSafe(data.trigger)}"\n---\n\n${data.content}\n`
   const { writeFile: wf } = await import('fs/promises')
   await wf(filePath, md, 'utf-8')
   await reloadSkills()
   return activeSkills
 })
 
-ipcMain.handle('skills:update', async (_e, data: { id: string; name: string; description: string; trigger: string; content: string }) => {
+ipcMain.handle('skills:update', async (_e, raw: unknown) => {
+  const data = safeParseIpc(SkillUpdateSchema, raw, 'skills:update')
   const skill = activeSkills.find((s) => s.id === data.id)
   if (!skill || skill.source !== 'custom' || !skill.filePath) return activeSkills
-  const md = `---\nname: ${data.name}\ndescription: ${data.description}\ntrigger: "${data.trigger}"\n---\n\n${data.content}\n`
+  const md = `---\nname: "${yamlSafe(data.name)}"\ndescription: "${yamlSafe(data.description)}"\ntrigger: "${yamlSafe(data.trigger)}"\n---\n\n${data.content}\n`
   const { writeFile: wf } = await import('fs/promises')
   await wf(skill.filePath, md, 'utf-8')
   await reloadSkills()
@@ -192,13 +224,16 @@ import {
 
 ipcMain.handle('automation:list', () => listAutomations())
 
-ipcMain.handle('automation:create', (_e, data: Omit<Automation, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'nextRunAt'>) =>
-  createAutomation(data),
-)
+ipcMain.handle('automation:create', (_e, raw: unknown) => {
+  const data = safeParseIpc(AutomationCreateSchema, raw, 'automation:create')
+  return createAutomation(data as Omit<Automation, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'nextRunAt'>)
+})
 
-ipcMain.handle('automation:update', (_e, id: string, patch: Partial<Automation>) =>
-  updateAutomation(id, patch),
-)
+ipcMain.handle('automation:update', (_e, id: unknown, patch: unknown) => {
+  if (typeof id !== 'string' || id.length === 0) throw new Error('[IPC automation:update] invalid id')
+  const validPatch = safeParseIpc(AutomationUpdateSchema, patch, 'automation:update')
+  return updateAutomation(id, validPatch as Partial<Automation>)
+})
 
 ipcMain.handle('automation:delete', (_e, id: string) => deleteAutomation(id))
 

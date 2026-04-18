@@ -3,6 +3,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { LanguageProvider } from '@/lib/language-context'
 import { ChannelStateProvider } from '@/lib/channel-state'
 import { Toaster } from '@/components/ui/sonner'
+import { ErrorBoundary } from '@/components/error-boundary'
 import type { NohiSettings } from '../electron/main/engine/types'
 
 // ── Lazy page imports ─────────────────────────────────────────────────────────
@@ -126,6 +127,7 @@ export default function App() {
   // No onboarding gate — always allow access (users configure keys in Settings)
 
   return (
+    <ErrorBoundary>
     <LanguageProvider>
       <ChannelStateProvider>
         <HashRouter>
@@ -264,5 +266,6 @@ export default function App() {
         <Toaster position="bottom-right" />
       </ChannelStateProvider>
     </LanguageProvider>
+    </ErrorBoundary>
   )
 }

@@ -85,12 +85,19 @@ export async function writeMemory(
 ): Promise<MemoryEntry> {
   await ensureMemoryDir()
   const now = new Date().toISOString()
-  // Generate ID from content first line or use existing
-  const id = existingId ?? (content.split('\n')[0]
-    .replace(/[^a-zA-Z0-9\u4e00-\u9fff]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 50)
-    .toLowerCase() || `memory-${Date.now()}`)
+  // Generate ID: kebab slug from first line + short UUID suffix (avoids collision on duplicate content)
+  let id: string
+  if (existingId) {
+    id = existingId
+  } else {
+    const slug = content.split('\n')[0]
+      .replace(/[^a-zA-Z0-9\u4e00-\u9fff]+/g, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 40)
+      .toLowerCase()
+    const suffix = (await import('crypto')).randomUUID().slice(0, 8)
+    id = slug ? `${slug}-${suffix}` : `memory-${suffix}`
+  }
 
   const filePath = join(MEMORY_DIR, `${id}.md`)
   let created = now

@@ -3,6 +3,7 @@ import nohiLogo from '@/assets/nohi-logo.svg'
 import { Outlet, useOutletContext, Link } from 'react-router-dom'
 import { Titlebar } from '@/components/shell/titlebar'
 import { CommandPalette } from '@/components/shell/command-palette'
+import { SessionList } from '@/components/chat/session-list'
 import { useAIStore } from '@/store/ai-store'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
@@ -271,62 +272,28 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
             </div>
           </div>
 
-          {/* Session list grouped */}
-          <div className="flex-1 overflow-y-auto px-2 pb-2">
-            {filteredSessions.length === 0 ? (
+          {/* Session list (virtualized when > 50 items) */}
+          {filteredSessions.length === 0 ? (
+            <div className="flex-1 overflow-y-auto px-2 pb-2">
               <p className="text-xs text-sidebar-foreground/40 text-center py-6 px-3">
                 {search
                   ? (language === 'zh' ? '无匹配结果' : 'No results')
                   : (language === 'zh' ? '暂无对话' : 'No chats yet')}
               </p>
-            ) : (
-              grouped.map(({ group, items }) => (
-                <div key={group} className="mb-1">
-                  <p className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
-                    {groupLabel(group, language)}
-                  </p>
-                  {items.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => setSession(s)}
-                      onMouseEnter={() => setHoveredId(s.id)}
-                      onMouseLeave={() => setHoveredId(null)}
-                      className={cn(
-                        'group/item relative flex items-center w-full px-2 py-1.5 rounded-lg text-left transition-colors',
-                        session?.id === s.id
-                          ? 'bg-sidebar-accent text-sidebar-foreground font-medium'
-                          : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground'
-                      )}
-                    >
-                      <span className="flex-1 text-xs truncate pr-12">
-                        {s.title || (language === 'zh' ? '新对话' : 'New Chat')}
-                      </span>
-                      {hoveredId === s.id && (
-                        <span className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
-                          <button
-                            type="button"
-                            onClick={(e) => exportSession(s.id, 'md', e)}
-                            title={language === 'zh' ? '导出 Markdown' : 'Export as Markdown'}
-                            className="flex items-center justify-center size-5 rounded-md text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors text-[10px]"
-                          >
-                            ↓
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => deleteSession(s.id, e)}
-                            className="flex items-center justify-center size-5 rounded-md text-sidebar-foreground/40 hover:text-destructive hover:bg-destructive/10 transition-colors text-xs"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              ))
-            )}
-          </div>
+            </div>
+          ) : (
+            <SessionList
+              grouped={grouped}
+              active={session}
+              hoveredId={hoveredId}
+              language={language}
+              groupLabel={groupLabel}
+              onSelect={setSession}
+              onHover={setHoveredId}
+              onExport={exportSession}
+              onDelete={deleteSession}
+            />
+          )}
 
           {/* Footer */}
           <div className="p-3 shrink-0">
