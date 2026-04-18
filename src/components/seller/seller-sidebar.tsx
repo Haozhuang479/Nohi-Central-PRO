@@ -240,6 +240,19 @@ export function SellerSidebar() {
                 </SidebarMenuItem>
               </Collapsible>
 
+              {/* ── Connectors (Layer 1 ingestion) ── */}
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  asChild
+                  isActive={pathname === '/seller/connectors'}
+                  tooltip="Connectors"
+                >
+                  <Link to="/seller/connectors">
+                    <span>Connectors</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
               {/* ── Automation ── */}
               <SidebarMenuItem>
                 <SidebarMenuButton

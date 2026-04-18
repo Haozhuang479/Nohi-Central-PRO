@@ -39,6 +39,22 @@ contextBridge.exposeInMainWorld('nohi', {
     tools: (serverId: string): Promise<string[]> => ipcRenderer.invoke('mcp:tools', serverId),
   },
 
+  // Connectors (Layer 1 ingestion credentials)
+  connectors: {
+    list: (): Promise<Array<{ id: 'shopify' | 'gdrive'; name: string; connected: boolean; account?: string; connectedAt?: number; lastUsedAt?: number; lastError?: string }>> =>
+      ipcRenderer.invoke('connectors:list'),
+    shopify: {
+      connect: (shop: string, accessToken: string): Promise<{ ok: true; account: string } | { ok: false; error: string }> =>
+        ipcRenderer.invoke('connectors:shopify:connect', shop, accessToken),
+      disconnect: (): Promise<void> => ipcRenderer.invoke('connectors:shopify:disconnect'),
+    },
+    gdrive: {
+      connect: (clientId: string, clientSecret: string): Promise<{ ok: true; account: string } | { ok: false; error: string }> =>
+        ipcRenderer.invoke('connectors:gdrive:connect', clientId, clientSecret),
+      disconnect: (): Promise<void> => ipcRenderer.invoke('connectors:gdrive:disconnect'),
+    },
+  },
+
   // Automation (scheduled prompts)
   automation: {
     list: (): Promise<Automation[]> => ipcRenderer.invoke('automation:list'),

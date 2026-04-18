@@ -853,6 +853,58 @@ export default function SettingsPage({ settings, onSave }: SettingsPageProps) {
         </div>
       </SettingsSection>
 
+      {/* ── 6c. Agentic Catalog ─────────────────────────────────────────── */}
+      <SettingsSection title={language === 'zh' ? 'Agentic Catalog' : 'Agentic Catalog'}>
+        <div className="p-6 space-y-3">
+          <p className="text-xs text-muted-foreground">
+            {language === 'zh'
+              ? 'Agentic Catalog 是 Nohi 协议下的商品上下文基础设施。连接到你的目录 API 端点。'
+              : 'The Agentic Catalog is Nohi\'s product context infrastructure. Configure the API endpoint your merchant catalog lives on.'}
+          </p>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+              {language === 'zh' ? 'API 端点 URL' : 'API Base URL'}
+            </label>
+            <Input
+              type="text"
+              value={draft.catalogApiUrl ?? ''}
+              onChange={(e) => patch('catalogApiUrl', e.target.value || undefined)}
+              placeholder="https://api.nohi.art or your self-hosted endpoint"
+              className="text-xs font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+              {language === 'zh' ? 'API Token' : 'API Token'}
+            </label>
+            <Input
+              type="password"
+              value={draft.catalogApiToken ?? ''}
+              onChange={(e) => patch('catalogApiToken', e.target.value || undefined)}
+              placeholder="nohi_sk_..."
+              className="text-xs font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+              {language === 'zh' ? 'Merchant ID' : 'Merchant ID'}
+            </label>
+            <div className="flex gap-2">
+              <Input
+                type="text"
+                value={draft.merchantId ?? ''}
+                onChange={(e) => patch('merchantId', e.target.value || undefined)}
+                placeholder="uuid"
+                className="flex-1 text-xs font-mono"
+              />
+              <Button size="sm" onClick={() => { onSave(draft); toast.success(language === 'zh' ? '已保存' : 'Saved') }}>
+                {language === 'zh' ? '保存' : 'Save'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </SettingsSection>
+
       {/* ── 7. Payment Methods ──────────────────────────────────────────── */}
       <SettingsSection title={language === 'zh' ? '支付方式' : 'Payment Methods'}>
         <div className="p-6 space-y-4">

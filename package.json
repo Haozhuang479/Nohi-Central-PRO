@@ -1,6 +1,6 @@
 {
   "name": "nohi-central-pro",
-  "version": "1.6.0",
+  "version": "2.0.0",
   "description": "Nohi Central PRO — Local AI Operations Hub",
   "main": "out/main/index.js",
   "scripts": {
@@ -44,6 +44,7 @@
     "marked-katex-extension": "^5.1.8",
     "mermaid": "^11.14.0",
     "node-fetch": "^3.3.2",
+    "pdfjs-dist": "^5.6.205",
     "react": "^18.3.1",
     "react-day-picker": "9.8.0",
     "react-dom": "^18.3.1",

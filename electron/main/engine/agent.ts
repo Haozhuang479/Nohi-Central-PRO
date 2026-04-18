@@ -15,6 +15,7 @@ import type {
 } from './types'
 import { ALL_TOOLS } from './tools/index'
 import { registerSubagentRunner } from './tools/task'
+import { registerBulkRunner } from './tools/bulkApply'
 import { runHooks } from './hooks/runner'
 import { mcpManager } from './mcp/client'
 import { buildSkillInjection } from './skills/loader'
@@ -352,6 +353,7 @@ export async function* runAgent(
 ): AsyncGenerator<AgentEvent> {
   // Register self as the subagent runner so the Task tool can spawn nested agents
   registerSubagentRunner(runAgent, activeSkills)
+  registerBulkRunner(runAgent, activeSkills)
 
   const userMessages = session.messages
 

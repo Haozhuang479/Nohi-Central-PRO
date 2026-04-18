@@ -125,6 +125,10 @@ export interface NohiSettings {
   firecrawlApiKey?: string
   // Optional self-hosted Firecrawl instance URL (defaults to https://api.firecrawl.dev)
   firecrawlApiUrl?: string
+  // Agentic Catalog configuration
+  catalogApiUrl?: string
+  catalogApiToken?: string
+  merchantId?: string
   // Lifecycle hooks (PreToolUse / PostToolUse / Stop / UserPromptSubmit)
   hooks?: HookConfig[]
 }

@@ -83,6 +83,9 @@ export const NohiSettingsSchema = z.object({
   braveSearchApiKey: z.string().max(500).optional(),
   firecrawlApiKey: z.string().max(500).optional(),
   firecrawlApiUrl: z.string().max(2000).optional(),
+  catalogApiUrl: z.string().max(2000).optional(),
+  catalogApiToken: z.string().max(500).optional(),
+  merchantId: z.string().max(200).optional(),
   hooks: z.array(z.object({
     event: z.enum(['PreToolUse', 'PostToolUse', 'Stop', 'UserPromptSubmit']),
     matcher: z.string().max(200).optional(),

@@ -91,6 +91,8 @@ app.whenReady().then(async () => {
   await mkdir(join(homedir(), '.nohi', 'memory'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'images'), { recursive: true })
   await mkdir(join(homedir(), '.nohi', 'automation'), { recursive: true })
+  await mkdir(join(homedir(), '.nohi', 'connectors'), { recursive: true })
+  await mkdir(join(homedir(), '.nohi', 'catalog'), { recursive: true })
 
   // Register custom protocol to serve local images in the renderer.
   // Restricted to ~/.nohi/ subtree only — no access to ~/.ssh, ~/.aws/credentials, etc.
@@ -297,6 +299,29 @@ function startScheduler(): void {
     }
   }, 60_000)
 }
+
+// ── Connectors (Layer 1 ingestion credentials) ────────────────────────────
+import { listConnectors } from './engine/connectors/store'
+import { connectShopify, disconnectShopify } from './engine/connectors/shopify'
+import { connectGDrive, disconnectGDrive } from './engine/connectors/gdrive'
+
+ipcMain.handle('connectors:list', () => listConnectors())
+
+ipcMain.handle('connectors:shopify:connect', async (_e, shop: unknown, accessToken: unknown) => {
+  if (typeof shop !== 'string' || typeof accessToken !== 'string') {
+    return { ok: false, error: 'shop and accessToken must be strings' }
+  }
+  return connectShopify(shop, accessToken)
+})
+ipcMain.handle('connectors:shopify:disconnect', () => disconnectShopify())
+
+ipcMain.handle('connectors:gdrive:connect', async (_e, clientId: unknown, clientSecret: unknown) => {
+  if (typeof clientId !== 'string' || typeof clientSecret !== 'string') {
+    return { ok: false, error: 'clientId and clientSecret must be strings' }
+  }
+  return connectGDrive(clientId, clientSecret)
+})
+ipcMain.handle('connectors:gdrive:disconnect', () => disconnectGDrive())
 
 // MCP status
 ipcMain.handle('mcp:status', () => mcpManager.getStatuses())
