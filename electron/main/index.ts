@@ -20,7 +20,9 @@ import { mcpManager } from './engine/mcp/client'
 
 // ─── Built-in skills directory ─────────────────────────────────────────────
 
-const RESOURCES_ROOT = app.isPackaged ? process.resourcesPath : join(__dirname, '../../..')
+// In dev: __dirname = <repo>/out/main → ../.. = <repo>
+// In prod: process.resourcesPath = <app>/Contents/Resources
+const RESOURCES_ROOT = app.isPackaged ? process.resourcesPath : join(__dirname, '../..')
 
 const SKILLS_BUILTIN_DIR = join(RESOURCES_ROOT, 'resources', 'skills')
 const SHOPIFY_TOOLKIT_DIR = join(RESOURCES_ROOT, 'resources', 'shopify-toolkit')

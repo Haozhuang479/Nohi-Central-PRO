@@ -30,7 +30,8 @@ export async function loadSkillsFromDir(
   let entries: string[]
   try {
     entries = await readdir(dir)
-  } catch {
+  } catch (err) {
+    console.warn(`[skills] Could not read ${source} skills dir: ${dir}`, err)
     return skills
   }
 
