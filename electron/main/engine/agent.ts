@@ -17,6 +17,7 @@ import { ALL_TOOLS } from './tools/index'
 import { registerSubagentRunner } from './tools/task'
 import { registerBulkRunner } from './tools/bulkApply'
 import { runHooks } from './hooks/runner'
+import { dispatchToolCall } from './agent/dispatch'
 import { mcpManager } from './mcp/client'
 import { buildSkillInjection } from './skills/loader'
 import { buildMemoryInjection } from './memory/store'
@@ -498,29 +499,12 @@ export async function* runAgent(
           continue
         }
 
-        const tool = allTools.find((t) => t.name === tc.name)
-        if (!tool) {
-          yield { type: 'tool_result', id: tc.id, name: tc.name, output: `Unknown tool: ${tc.name}`, isError: true }
-          toolResultMsgs.push({ role: 'tool', tool_call_id: tc.id, content: `Unknown tool: ${tc.name}` })
-          continue
-        }
-        // PreToolUse hooks
-        const preHook = await runHooks('PreToolUse', { toolName: tc.name, toolInput: input, workingDir }, settings)
-        if (preHook.blocked) {
-          const blockMsg = preHook.results.map((r) => r.stderr || r.stdout).join('\n').trim() || 'Blocked by PreToolUse hook'
-          yield { type: 'tool_result', id: tc.id, name: tc.name, output: blockMsg, isError: true }
-          toolResultMsgs.push({ role: 'tool', tool_call_id: tc.id, content: blockMsg })
-          continue
-        }
-        const result = await tool.call(input, { workingDir, settings, onProgress: (t) => onEvent({ type: 'text_delta', delta: t }) })
-        const output = result.error ?? result.output ?? ''
-        yield { type: 'tool_result', id: tc.id, name: tc.name, output, isError: !!result.error }
-        runHooks('PostToolUse', { toolName: tc.name, toolInput: input, toolOutput: output, workingDir }, settings).catch(() => {})
-        if (tc.name === 'todo_write' && !result.error) {
-          const todos = (input.todos ?? []) as Array<{ content: string; activeForm: string; status: 'pending' | 'in_progress' | 'completed' }>
-          yield { type: 'todos_updated', todos }
-        }
-        toolResultMsgs.push({ role: 'tool', tool_call_id: tc.id, content: output })
+        const outcome = await dispatchToolCall(
+          { toolCallId: tc.id, toolName: tc.name, input },
+          { allTools, workingDir, settings, onEvent },
+        )
+        for (const ev of outcome.events) yield ev
+        toolResultMsgs.push({ role: 'tool', tool_call_id: tc.id, content: outcome.output })
       }
       oaiMessages = [...oaiMessages, ...toolResultMsgs]
     }
@@ -704,75 +688,16 @@ export async function* runAgent(
     }> = []
 
     for (const toolCall of toolUseBlocks) {
-      const tool = allTools.find((t) => t.name === toolCall.name)
-
-      if (!tool) {
-        const event: AgentEvent = {
-          type: 'tool_result',
-          id: toolCall.id,
-          name: toolCall.name,
-          output: `Unknown tool: ${toolCall.name}`,
-          isError: true,
-        }
-        yield event
-        toolResults.push({
-          type: 'tool_result',
-          tool_use_id: toolCall.id,
-          content: `Unknown tool: ${toolCall.name}`,
-          is_error: true,
-        })
-        continue
-      }
-
-      // PreToolUse hooks — non-zero exit blocks the tool call
-      const preHook = await runHooks('PreToolUse', {
-        toolName: toolCall.name,
-        toolInput: toolCall.input,
-        workingDir,
-      }, settings)
-      if (preHook.blocked) {
-        const blockMsg = preHook.results.map((r) => r.stderr || r.stdout).join('\n').trim() || 'Blocked by PreToolUse hook'
-        yield { type: 'tool_result', id: toolCall.id, name: toolCall.name, output: blockMsg, isError: true }
-        toolResults.push({ type: 'tool_result', tool_use_id: toolCall.id, content: blockMsg, is_error: true })
-        continue
-      }
-
-      const result = await tool.call(toolCall.input, {
-        workingDir,
-        settings,
-        onProgress: (text) => onEvent({ type: 'text_delta', delta: text }),
-      })
-
-      const output = result.error ?? result.output ?? ''
-      const isError = !!result.error
-
-      // PostToolUse hooks — observation only (don't block)
-      runHooks('PostToolUse', {
-        toolName: toolCall.name,
-        toolInput: toolCall.input,
-        toolOutput: output,
-        workingDir,
-      }, settings).catch(() => {})
-
-      const event: AgentEvent = {
-        type: 'tool_result',
-        id: toolCall.id,
-        name: toolCall.name,
-        output,
-        isError,
-      }
-      yield event
-
-      if (toolCall.name === 'todo_write' && !isError) {
-        const todos = (toolCall.input.todos ?? []) as Array<{ content: string; activeForm: string; status: 'pending' | 'in_progress' | 'completed' }>
-        yield { type: 'todos_updated', todos }
-      }
-
+      const outcome = await dispatchToolCall(
+        { toolCallId: toolCall.id, toolName: toolCall.name, input: toolCall.input },
+        { allTools, workingDir, settings, onEvent },
+      )
+      for (const ev of outcome.events) yield ev
       toolResults.push({
         type: 'tool_result',
         tool_use_id: toolCall.id,
-        content: output,
-        is_error: isError || undefined,
+        content: outcome.output,
+        is_error: outcome.isError || undefined,
       })
     }
 

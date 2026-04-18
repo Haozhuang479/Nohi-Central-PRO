@@ -3,6 +3,7 @@
 // Supports both cloud (api.firecrawl.dev) and self-hosted instances
 
 import type { ToolDef, ToolResult, ToolCallOpts } from '../types'
+import { createBearerClient, createHttpClient, HttpError } from '../lib/http'
 
 const DEFAULT_API_URL = 'https://api.firecrawl.dev'
 
@@ -15,62 +16,45 @@ function getApiKey(settings?: ToolCallOpts['settings']): string | undefined {
   return (settings as Record<string, unknown> | undefined)?.firecrawlApiKey as string | undefined
 }
 
+function client(opts: ToolCallOpts) {
+  const apiKey = getApiKey(opts.settings)
+  const baseUrl = getBaseUrl(opts.settings)
+  return apiKey
+    ? createBearerClient(apiKey, { baseUrl, defaultTimeoutMs: 60_000 })
+    : createHttpClient({ baseUrl, defaultTimeoutMs: 60_000 })
+}
+
+// Backward-compat wrappers — same shape as before, now delegating to the shared client.
+// Existing tool bodies below still call firecrawlPost/firecrawlGet without changes.
 async function firecrawlPost(
   path: string,
   body: Record<string, unknown>,
   opts: ToolCallOpts,
 ): Promise<{ ok: boolean; status: number; data: unknown; errorText: string }> {
-  const apiKey = getApiKey(opts.settings)
-  const baseUrl = getBaseUrl(opts.settings)
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+  try {
+    const data = await client(opts).post<unknown>(path, body)
+    return { ok: true, status: 200, data, errorText: '' }
+  } catch (err) {
+    if (err instanceof HttpError) {
+      return { ok: false, status: err.status, data: null, errorText: err.bodyPreview }
+    }
+    return { ok: false, status: 0, data: null, errorText: err instanceof Error ? err.message : String(err) }
   }
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`
-  }
-
-  const resp = await fetch(`${baseUrl}${path}`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60_000),
-  })
-
-  if (!resp.ok) {
-    const errorText = await resp.text().catch(() => '')
-    return { ok: false, status: resp.status, data: null, errorText }
-  }
-
-  const data = await resp.json()
-  return { ok: true, status: resp.status, data, errorText: '' }
 }
 
 async function firecrawlGet(
   path: string,
   opts: ToolCallOpts,
 ): Promise<{ ok: boolean; status: number; data: unknown; errorText: string }> {
-  const apiKey = getApiKey(opts.settings)
-  const baseUrl = getBaseUrl(opts.settings)
-
-  const headers: Record<string, string> = {}
-  if (apiKey) {
-    headers['Authorization'] = `Bearer ${apiKey}`
+  try {
+    const data = await client(opts).get<unknown>(path, { timeoutMs: 30_000 })
+    return { ok: true, status: 200, data, errorText: '' }
+  } catch (err) {
+    if (err instanceof HttpError) {
+      return { ok: false, status: err.status, data: null, errorText: err.bodyPreview }
+    }
+    return { ok: false, status: 0, data: null, errorText: err instanceof Error ? err.message : String(err) }
   }
-
-  const resp = await fetch(`${baseUrl}${path}`, {
-    method: 'GET',
-    headers,
-    signal: AbortSignal.timeout(30_000),
-  })
-
-  if (!resp.ok) {
-    const errorText = await resp.text().catch(() => '')
-    return { ok: false, status: resp.status, data: null, errorText }
-  }
-
-  const data = await resp.json()
-  return { ok: true, status: resp.status, data, errorText: '' }
 }
 
 // ─── Firecrawl Scrape Tool ────────────────────────────────────────────────

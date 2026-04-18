@@ -3,6 +3,7 @@
 import { readFile } from 'fs/promises'
 import { resolve, basename, extname } from 'path'
 import type { ToolDef, ToolResult, ToolCallOpts } from '../types'
+import { castString, castBoolean, clampNumber, resolveSafePath, runTool } from './_utils'
 
 const VISION_MODEL = 'gpt-4o-mini'
 
@@ -47,39 +48,33 @@ export const ExtractFromImageTool: ToolDef = {
     },
   },
   async call(input, opts: ToolCallOpts): Promise<ToolResult> {
-    const apiKey = opts.settings?.openaiApiKey
-    if (!apiKey) return { error: 'OpenAI API key not set (required for vision extraction).' }
+    return runTool(async () => {
+      const apiKey = opts.settings?.openaiApiKey
+      if (!apiKey) return { error: 'OpenAI API key not set (required for vision extraction).' }
 
-    let imageBase64: string
-    let mime: string
-    if (input.path) {
-      const p = resolve(opts.workingDir, input.path as string)
-      if (!p.startsWith(resolve(opts.workingDir))) return { error: 'Path outside working directory.' }
-      try {
-        const buf = await readFile(p)
+      let imageBase64: string
+      let mime: string
+      if (input.path) {
+        const r = resolveSafePath(input.path, opts.workingDir)
+        if ('error' in r) return r
+        const buf = await readFile(r.path)
         imageBase64 = buf.toString('base64')
-      } catch (err) {
-        return { error: `Could not read image: ${err instanceof Error ? err.message : String(err)}` }
+        const ext = extname(r.path).toLowerCase()
+        mime = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
+      } else if (input.base64) {
+        imageBase64 = castString(input.base64, 'base64')
+        mime = castString(input.mime_type, 'mime_type', { default: 'image/png' })
+      } else {
+        return { error: 'Provide either `path` or `base64`.' }
       }
-      const ext = extname(p).toLowerCase()
-      mime = ext === '.png' ? 'image/png' : ext === '.gif' ? 'image/gif' : ext === '.webp' ? 'image/webp' : 'image/jpeg'
-    } else if (input.base64) {
-      imageBase64 = input.base64 as string
-      mime = (input.mime_type as string) ?? 'image/png'
-    } else {
-      return { error: 'Provide either `path` or `base64`.' }
-    }
 
-    const task = (input.task as string) ?? 'describe'
-    const prompt = taskPrompt(task, input.prompt as string | undefined)
+      const task = castString(input.task, 'task', { default: 'describe' })
+      const prompt = taskPrompt(task, typeof input.prompt === 'string' ? input.prompt : undefined)
 
-    try {
       opts.onProgress?.('Analyzing image with vision model…')
       const text = await callVision(apiKey, imageBase64, mime, prompt)
       return { output: text || '(empty response from vision model)' }
-    } catch (err) {
-      return { error: err instanceof Error ? err.message : String(err) }
-    }
+    }, 'extract_from_image')
   },
 }
 
@@ -129,21 +124,15 @@ export const ExtractFromPdfTool: ToolDef = {
     required: ['path'],
   },
   async call(input, opts: ToolCallOpts): Promise<ToolResult> {
-    const p = resolve(opts.workingDir, input.path as string)
-    if (!p.startsWith(resolve(opts.workingDir))) return { error: 'Path outside working directory.' }
+    return runTool(async () => {
+      const r = resolveSafePath(input.path, opts.workingDir)
+      if ('error' in r) return r
+      const p = r.path
 
-    let buf: Buffer
-    try {
-      buf = await readFile(p)
-    } catch (err) {
-      return { error: `Could not read PDF: ${err instanceof Error ? err.message : String(err)}` }
-    }
+      const buf = await readFile(p)
+      const maxPages = clampNumber(input.max_pages, { min: 1, max: 100, default: 20 })
+      const useVision = castBoolean(input.use_vision_fallback)
 
-    const maxPages = Math.min(Math.max((input.max_pages as number | undefined) ?? 20, 1), 100)
-    const useVision = !!input.use_vision_fallback
-
-    try {
-      // pdfjs-dist has a legacy CJS build that works in Node/Electron main
       const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs') as {
         getDocument: (src: { data: Uint8Array }) => { promise: Promise<PdfDocProxy> }
       }
@@ -164,14 +153,11 @@ export const ExtractFromPdfTool: ToolDef = {
         if (pageText.length > 0) {
           pages.push(`## Page ${i}\n\n${pageText}`)
         } else if (useVision) {
-          // Render the page as a PNG, run vision OCR
           const apiKey = opts.settings?.openaiApiKey
           if (!apiKey) {
             pages.push(`## Page ${i}\n\n(no text layer; vision fallback requires OpenAI API key)`)
             continue
           }
-          // pdfjs in Node can render using node-canvas; we don't ship that.
-          // Pragmatic alternative: skip and tell the caller.
           pages.push(`## Page ${i}\n\n(image-only page — vision fallback not yet wired; process the PDF externally or use a rendering tool first)`)
         } else {
           pages.push(`## Page ${i}\n\n(no extractable text; set use_vision_fallback=true to OCR)`)
@@ -180,10 +166,7 @@ export const ExtractFromPdfTool: ToolDef = {
       const body = pages.join('\n\n')
       const footer = doc.numPages > maxPages ? `\n\n*(truncated — ${doc.numPages - maxPages} more pages not processed)*` : ''
       return { output: `# ${basename(p)}\n\nTotal pages: ${doc.numPages}\n\n${body}${footer}` }
-    } catch (err) {
-      const e = err as { message?: string }
-      return { error: `PDF extraction failed: ${e.message ?? String(err)}` }
-    }
+    }, 'extract_from_pdf')
   },
 }
 

@@ -5,6 +5,7 @@
 // and any other skill that says "do X to every product matching Y".
 
 import type { ToolDef, ToolResult, ToolCallOpts, Session, AgentEvent, NohiSettings, Skill } from '../types'
+import { castString, clampNumber, castBoolean, runTool } from './_utils'
 
 // Lazy-registered runner reference — same pattern as task.ts to avoid circular imports.
 let runAgentImpl:
@@ -57,20 +58,19 @@ export const BulkApplyTool: ToolDef = {
   },
 
   async call(input, opts: ToolCallOpts): Promise<ToolResult> {
-    const items = (input.items as string[]) ?? []
-    const template = input.prompt_template as string
-    const description = (input.description as string | undefined) ?? 'bulk operation'
-    const concurrency = Math.min(Math.max((input.concurrency as number | undefined) ?? DEFAULT_CONCURRENCY, 1), MAX_CONCURRENCY)
-    const maxRetries = Math.max((input.max_retries as number | undefined) ?? 1, 0)
-    const stopOnError = !!input.stop_on_error
+    return runTool(async () => {
+      const items = (input.items as string[]) ?? []
+      const template = castString(input.prompt_template, 'prompt_template')
+      const description = castString(input.description, 'description', { default: 'bulk operation' })
+      const concurrency = clampNumber(input.concurrency, { min: 1, max: MAX_CONCURRENCY, default: DEFAULT_CONCURRENCY })
+      const maxRetries = clampNumber(input.max_retries, { min: 0, max: 10, default: 1 })
+      const stopOnError = castBoolean(input.stop_on_error)
 
-    if (!Array.isArray(items) || items.length === 0) return { error: 'items must be a non-empty array' }
-    if (items.length > 500) return { error: `Too many items (${items.length}). Batch into chunks of 500.` }
-    if (typeof template !== 'string' || !template.includes('{{item}}')) {
-      return { error: 'prompt_template must contain the literal {{item}} placeholder.' }
-    }
-    if (!runAgentImpl) return { error: 'Bulk runner not initialized.' }
-    if (!opts.settings) return { error: 'Settings not available.' }
+      if (!Array.isArray(items) || items.length === 0) return { error: 'items must be a non-empty array' }
+      if (items.length > 500) return { error: `Too many items (${items.length}). Batch into chunks of 500.` }
+      if (!template.includes('{{item}}')) return { error: 'prompt_template must contain the literal {{item}} placeholder.' }
+      if (!runAgentImpl) return { error: 'Bulk runner not initialized.' }
+      if (!opts.settings) return { error: 'Settings not available.' }
 
     opts.onProgress?.(`[bulk: ${description}] ${items.length} items, concurrency=${concurrency}`)
 
@@ -136,8 +136,9 @@ export const BulkApplyTool: ToolDef = {
     const footer = results.length > 30 ? `\n… and ${results.length - 30} more` : ''
     const failSummary = failed.length > 0 ? `\n\nFailures:\n${failed.slice(0, 10).map((f) => `- ${f.item}: ${f.output}`).join('\n')}` : ''
 
-    return {
-      output: `## Bulk ${description}\n\nTotal: ${items.length}  ·  Succeeded: ${succeeded}  ·  Failed: ${failed.length}${aborted ? '  ·  ABORTED' : ''}\n\n${preview}${footer}${failSummary}`,
-    }
+      return {
+        output: `## Bulk ${description}\n\nTotal: ${items.length}  ·  Succeeded: ${succeeded}  ·  Failed: ${failed.length}${aborted ? '  ·  ABORTED' : ''}\n\n${preview}${footer}${failSummary}`,
+      }
+    })
   },
 }

@@ -4,8 +4,9 @@
 // the Custom App flow (user creates an app in their Shopify admin → copies the
 // Admin API access token → pastes into Nohi) is simpler, safer, and standard.
 
-import { loadCredentials, saveCredentials, deleteCredentials, markUsed, markError } from './store'
 import { z } from 'zod'
+import { markUsed, markError } from './store'
+import { defineConnector } from './base'
 import type { PartialProduct } from '../catalog/protocol'
 
 const SHOPIFY_API_VERSION = '2025-01'
@@ -27,47 +28,52 @@ function normalizeShop(raw: string): string {
   return `${trimmed}.myshopify.com`
 }
 
-export async function connectShopify(shop: string, accessToken: string): Promise<{ ok: true; account: string } | { ok: false; error: string }> {
-  const normalized = normalizeShop(shop)
-  // Validate format
-  const parsed = ShopifyCredentialsSchema.safeParse({ shop: normalized, accessToken })
-  if (!parsed.success) {
-    return { ok: false, error: parsed.error.issues.map((i) => i.message).join('; ') }
-  }
-  // Ping the Shopify Admin API to verify the token works
-  try {
-    const resp = await fetch(`https://${normalized}/admin/api/${SHOPIFY_API_VERSION}/shop.json`, {
-      headers: { 'X-Shopify-Access-Token': accessToken },
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (!resp.ok) {
-      const text = await resp.text()
-      return { ok: false, error: `Shopify API returned ${resp.status}: ${text.slice(0, 200)}` }
+const shopifyConnector = defineConnector<ShopifyCredentials>({
+  id: 'shopify',
+  name: 'Shopify',
+  schema: ShopifyCredentialsSchema,
+
+  async verify(input) {
+    const { shop, accessToken } = (input ?? {}) as { shop?: string; accessToken?: string }
+    if (typeof shop !== 'string' || typeof accessToken !== 'string') {
+      return { ok: false, error: 'Both shop and accessToken are required.' }
     }
-    const data = await resp.json() as { shop?: { name?: string; email?: string; domain?: string } }
-    const account = data.shop?.name || data.shop?.domain || normalized
-    await saveCredentials<ShopifyCredentials>('shopify', {
-      shop: normalized,
-      accessToken,
-      _account: account,
-      _connectedAt: Date.now(),
-    })
-    return { ok: true, account }
-  } catch (err) {
-    const e = err as { name?: string; message?: string }
-    return { ok: false, error: e.name === 'TimeoutError' ? 'Shopify API timed out' : (e.message ?? 'Unknown error') }
-  }
+    const normalized = normalizeShop(shop)
+    const parsed = ShopifyCredentialsSchema.safeParse({ shop: normalized, accessToken })
+    if (!parsed.success) {
+      return { ok: false, error: parsed.error.issues.map((i) => i.message).join('; ') }
+    }
+    // Ping /shop.json to confirm the token is real
+    try {
+      const resp = await fetch(`https://${normalized}/admin/api/${SHOPIFY_API_VERSION}/shop.json`, {
+        headers: { 'X-Shopify-Access-Token': accessToken },
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (!resp.ok) {
+        const text = await resp.text()
+        return { ok: false, error: `Shopify API returned ${resp.status}: ${text.slice(0, 200)}` }
+      }
+      const data = await resp.json() as { shop?: { name?: string; domain?: string } }
+      const account = data.shop?.name || data.shop?.domain || normalized
+      return { ok: true, creds: parsed.data, account }
+    } catch (err) {
+      const e = err as { name?: string; message?: string }
+      return { ok: false, error: e.name === 'TimeoutError' ? 'Shopify API timed out' : (e.message ?? 'Unknown error') }
+    }
+  },
+})
+
+// Public surface — keeps the existing tool/UI imports working unchanged.
+export async function connectShopify(shop: string, accessToken: string) {
+  return shopifyConnector.connect({ shop, accessToken })
 }
 
 export async function disconnectShopify(): Promise<void> {
-  await deleteCredentials('shopify')
+  await shopifyConnector.disconnect()
 }
 
 export async function getShopifyCreds(): Promise<ShopifyCredentials | null> {
-  const raw = await loadCredentials<ShopifyCredentials>('shopify')
-  if (!raw) return null
-  const parsed = ShopifyCredentialsSchema.safeParse(raw)
-  return parsed.success ? parsed.data : null
+  return shopifyConnector.getCreds()
 }
 
 async function shopifyFetch<T>(path: string, init?: RequestInit): Promise<T> {

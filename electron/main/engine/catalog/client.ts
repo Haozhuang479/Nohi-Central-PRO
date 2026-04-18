@@ -11,6 +11,7 @@ import { join } from 'path'
 import { homedir } from 'os'
 import type { OneIdProduct, PartialProduct } from './protocol'
 import { checksumProduct, OneIdProductSchema } from './protocol'
+import { createBearerClient, HttpError } from '../lib/http'
 
 const DEFAULT_API_BASE = 'https://nohi-product-search-1049263400892.us-west1.run.app/api'
 const DEFAULT_API_TOKEN = 'dac91092b5cdfe190329e12dee1779be'
@@ -75,53 +76,50 @@ export interface SearchHit {
   [k: string]: unknown
 }
 
+function http(cfg: CatalogConfig) {
+  return createBearerClient(cfg.apiToken, { baseUrl: cfg.apiBase, defaultTimeoutMs: 30_000 })
+}
+
 export async function searchRemote(cfg: CatalogConfig, query: string, limit = 10): Promise<SearchHit[]> {
-  const resp = await fetch(`${cfg.apiBase}/search`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${cfg.apiToken}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, merchant_id: cfg.merchantId, limit }),
-    signal: AbortSignal.timeout(30_000),
-  })
-  if (!resp.ok) throw new Error(`Catalog search ${resp.status}: ${(await resp.text()).slice(0, 200)}`)
-  const data = await resp.json() as { results?: SearchHit[] }
-  return data.results ?? []
+  try {
+    const data = await http(cfg).post<{ results?: SearchHit[] }>('/search', {
+      query, merchant_id: cfg.merchantId, limit,
+    })
+    return data.results ?? []
+  } catch (err) {
+    if (err instanceof HttpError) throw new Error(`Catalog search ${err.status}: ${err.bodyPreview.slice(0, 200)}`)
+    throw err
+  }
 }
 
 export async function upsertRemote(cfg: CatalogConfig, product: PartialProduct): Promise<{ ok: true; oneId: string } | { ok: false; error: string }> {
-  // Two-step strategy: try the modern `/products` endpoint; if it 404s (dev backend doesn't have it yet),
-  // fall back to writing only to local cache and warn.
+  // Strategy: try the modern `/products` endpoint; if it 404s (dev backend doesn't have it yet),
+  // treat it as success and rely on local cache only.
   try {
-    const resp = await fetch(`${cfg.apiBase}/products`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${cfg.apiToken}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ merchant_id: cfg.merchantId, product }),
-      signal: AbortSignal.timeout(30_000),
+    const data = await http(cfg).post<{ oneId?: string; id?: string }>('/products', {
+      merchant_id: cfg.merchantId, product,
     })
-    if (resp.status === 404 || resp.status === 405) {
-      return { ok: true, oneId: product.oneId ?? 'local-only' }
-    }
-    if (!resp.ok) {
-      return { ok: false, error: `Catalog upsert ${resp.status}: ${(await resp.text()).slice(0, 200)}` }
-    }
-    const data = await resp.json() as { oneId?: string; id?: string }
     return { ok: true, oneId: data.oneId ?? data.id ?? product.oneId ?? 'unknown' }
   } catch (err) {
+    if (err instanceof HttpError) {
+      if (err.status === 404 || err.status === 405) {
+        return { ok: true, oneId: product.oneId ?? 'local-only' }
+      }
+      return { ok: false, error: `Catalog upsert ${err.status}: ${err.bodyPreview.slice(0, 200)}` }
+    }
     return { ok: false, error: err instanceof Error ? err.message : String(err) }
   }
 }
 
 export async function getRemote(cfg: CatalogConfig, oneId: string): Promise<OneIdProduct | null> {
   try {
-    const resp = await fetch(`${cfg.apiBase}/products/${encodeURIComponent(oneId)}?merchant_id=${encodeURIComponent(cfg.merchantId)}`, {
-      headers: { Authorization: `Bearer ${cfg.apiToken}` },
-      signal: AbortSignal.timeout(15_000),
+    const data = await http(cfg).get<{ product?: unknown }>(`/products/${encodeURIComponent(oneId)}?merchant_id=${encodeURIComponent(cfg.merchantId)}`, {
+      timeoutMs: 15_000,
     })
-    if (resp.status === 404 || resp.status === 405) return null
-    if (!resp.ok) throw new Error(`Catalog get ${resp.status}`)
-    const data = await resp.json() as { product?: unknown }
     const parsed = OneIdProductSchema.safeParse(data.product ?? data)
     return parsed.success ? parsed.data : null
-  } catch {
+  } catch (err) {
+    if (err instanceof HttpError && (err.status === 404 || err.status === 405)) return null
     return null
   }
 }

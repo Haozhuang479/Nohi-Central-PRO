@@ -40,7 +40,7 @@ describe('GrepTool', () => {
 
   it('rejects path outside workingDir', async () => {
     const r = await GrepTool.call({ pattern: 'x', path: '../../../etc' }, opts())
-    expect(r.error).toMatch(/outside working directory/i)
+    expect(r.error).toMatch(/outside (the )?working directory/i)
   })
 
   it('does not interpret shell metacharacters in pattern', async () => {

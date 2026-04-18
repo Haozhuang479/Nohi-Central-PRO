@@ -2,8 +2,8 @@
 
 import { execFile } from 'child_process'
 import { promisify } from 'util'
-import { resolve } from 'path'
 import type { ToolDef, ToolResult, ToolCallOpts } from '../types'
+import { castString, castBoolean, resolveSafePath, runTool } from './_utils'
 
 const execFileAsync = promisify(execFile)
 
@@ -23,48 +23,40 @@ export const GrepTool: ToolDef = {
   },
 
   async call(input, opts: ToolCallOpts): Promise<ToolResult> {
-    const pattern = input.pattern as string
-    if (typeof pattern !== 'string' || !pattern.trim()) {
-      return { error: 'pattern must be a non-empty string' }
-    }
+    return runTool(async () => {
+      const pattern = castString(input.pattern, 'pattern')
+      const globPattern = castString(input.glob, 'glob', { optional: true }) || undefined
+      const caseInsensitive = castBoolean(input.case_insensitive)
 
-    const searchPath = input.path
-      ? resolve(opts.workingDir, input.path as string)
-      : opts.workingDir
+      // Path safety: resolve relative paths against workingDir, reject escapes
+      let searchPath = opts.workingDir
+      if (input.path !== undefined) {
+        const r = resolveSafePath(input.path, opts.workingDir)
+        if ('error' in r) return r
+        searchPath = r.path
+      }
 
-    // Path traversal protection
-    if (!searchPath.startsWith(resolve(opts.workingDir))) {
-      return { error: 'Access denied: path is outside working directory.' }
-    }
+      const args = ['-r', '-n', '--color=never']
+      if (caseInsensitive) args.push('-i')
+      if (globPattern) args.push(`--include=${globPattern}`)
+      args.push('-e', pattern, searchPath)
 
-    const globPattern = input.glob as string | undefined
-    if (globPattern && typeof globPattern !== 'string') {
-      return { error: 'glob must be a string' }
-    }
-
-    // Build args for execFile — no shell interpolation, no string concat
-    const args: string[] = ['-r', '-n', '--color=never']
-    if (input.case_insensitive) args.push('-i')
-    if (globPattern) args.push(`--include=${globPattern}`)
-    args.push('-e', pattern, searchPath)
-
-    try {
-      const { stdout } = await execFileAsync('grep', args, {
-        cwd: opts.workingDir,
-        timeout: 30_000,
-        maxBuffer: 4 * 1024 * 1024,
-      })
-      // Cap output to first 200 lines on the JS side (no shell `| head`)
-      const lines = stdout.split('\n')
-      const trimmed = lines.slice(0, 200).join('\n').trim()
-      const truncated = lines.length > 200 ? `\n... (${lines.length - 200} more lines)` : ''
-      return { output: (trimmed || 'No matches found.') + truncated }
-    } catch (err: unknown) {
-      const e = err as { code?: number | string; stderr?: string; killed?: boolean; signal?: string }
-      // grep exits 1 when no matches — not an error
-      if (e.code === 1) return { output: 'No matches found.' }
-      if (e.killed || e.signal === 'SIGTERM') return { error: 'grep timed out (30s limit).' }
-      return { error: `grep failed: ${e.stderr ?? String(e.code ?? 'unknown')}` }
-    }
+      try {
+        const { stdout } = await execFileAsync('grep', args, {
+          cwd: opts.workingDir,
+          timeout: 30_000,
+          maxBuffer: 4 * 1024 * 1024,
+        })
+        const lines = stdout.split('\n')
+        const trimmed = lines.slice(0, 200).join('\n').trim()
+        const truncated = lines.length > 200 ? `\n... (${lines.length - 200} more lines)` : ''
+        return { output: (trimmed || 'No matches found.') + truncated }
+      } catch (err: unknown) {
+        const e = err as { code?: number | string; stderr?: string; killed?: boolean; signal?: string }
+        if (e.code === 1) return { output: 'No matches found.' }
+        if (e.killed || e.signal === 'SIGTERM') return { error: 'grep timed out (30s limit).' }
+        return { error: `grep failed: ${e.stderr ?? String(e.code ?? 'unknown')}` }
+      }
+    })
   },
 }
