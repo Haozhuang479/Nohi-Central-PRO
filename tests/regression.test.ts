@@ -143,6 +143,22 @@ describe('regression: v2.0.1 — MCP errors are actionable', () => {
   })
 })
 
+// ─── v2.5.x: chat page references resolved (no dangling identifiers) ─────
+
+describe('regression: chat page identifiers resolve', () => {
+  it('chat/page.tsx defines PROVIDER_LABELS, PROVIDER_MODELS, getContextWindow, formatCtxLabel', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    // Each is both *used* (reference) and *defined* (declaration) in the same file
+    for (const ident of ['PROVIDER_LABELS', 'PROVIDER_MODELS', 'getContextWindow', 'formatCtxLabel', 'shortenPath']) {
+      expect(src, `identifier "${ident}" referenced`).toMatch(new RegExp(`\\b${ident}\\b`))
+      // Declaration — `const PROVIDER_LABELS =` or `function getContextWindow(`
+      expect(src, `identifier "${ident}" declared`).toMatch(
+        new RegExp(`(?:const|function)\\s+${ident}\\b`),
+      )
+    }
+  })
+})
+
 // ─── v2.0.1: Brave fallback to DuckDuckGo is visible to user ─────────────
 
 describe('regression: v2.0.1 — Brave→DuckDuckGo fallback visible in tool output', () => {
