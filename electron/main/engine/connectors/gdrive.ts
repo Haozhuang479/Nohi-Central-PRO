@@ -12,6 +12,7 @@ import { URL } from 'url'
 import { randomBytes, createHash } from 'crypto'
 import { shell } from 'electron'
 import { loadCredentials, saveCredentials, deleteCredentials, markUsed, markError } from './store'
+import { logError } from '../lib/logger'
 import { z } from 'zod'
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.readonly'
@@ -153,7 +154,9 @@ export async function connectGDrive(clientId: string, clientSecret: string): Pro
         authUrl.searchParams.set('state', state)
         authUrl.searchParams.set('code_challenge', challenge)
         authUrl.searchParams.set('code_challenge_method', 'S256')
-        shell.openExternal(authUrl.toString()).catch(() => {})
+        shell.openExternal(authUrl.toString()).catch((err) => {
+          logError(err, '[gdrive] openExternal failed — user will need to copy the auth URL manually')
+        })
       })
 
       // 5 min safety timeout

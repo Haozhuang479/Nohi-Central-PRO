@@ -2,6 +2,7 @@
 // Adapted from Claude Code WebSearchTool
 
 import type { ToolDef, ToolResult, ToolCallOpts } from '../types'
+import { getBraveKey } from '../lib/keys'
 
 interface SearchResult {
   title: string
@@ -111,7 +112,7 @@ export const WebSearchTool: ToolDef = {
     if (!query.trim()) return { error: 'Search query is empty.' }
 
     // Try Brave Search first if API key available
-    const braveKey = opts.settings?.braveSearchApiKey || process.env.BRAVE_SEARCH_API_KEY
+    const braveKey = getBraveKey(opts.settings)
     let braveErrorNote = ''
     if (braveKey) {
       try {

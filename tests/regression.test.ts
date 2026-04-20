@@ -237,6 +237,33 @@ describe('regression: v2.5.2 — shell:open-external protocol allowlist', () => 
   })
 })
 
+// ─── v2.7.2: polish + doc drift ───────────────────────────────────────────
+
+describe('regression: v2.7.2 — small hardening + doc drift fixes', () => {
+  it('Brave key lookup centralised in lib/keys.ts', () => {
+    const helper = readFileSync(join(ROOT, 'electron/main/engine/lib/keys.ts'), 'utf-8')
+    expect(helper).toMatch(/export function getBraveKey/)
+    expect(helper).toMatch(/BRAVE_SEARCH_API_KEY/)
+    for (const path of ['electron/main/engine/tools/webSearch.ts', 'electron/main/engine/tools/webHelpers.ts']) {
+      const src = readFileSync(join(ROOT, path), 'utf-8')
+      expect(src, `${path} calls getBraveKey`).toMatch(/getBraveKey\(opts\.settings\)/)
+      expect(src, `${path} no longer inlines the env fallback`).not.toMatch(/process\.env\.BRAVE_SEARCH_API_KEY/)
+    }
+  })
+
+  it('gdrive.ts openExternal no longer swallows errors silently', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/connectors/gdrive.ts'), 'utf-8')
+    // The old pattern `.catch(() => {})` after openExternal is gone.
+    expect(src).not.toMatch(/openExternal\([^)]+\)\.catch\(\(\)\s*=>\s*\{\s*\}\)/)
+    expect(src).toMatch(/logError[\s\S]{0,120}gdrive[\s\S]{0,120}openExternal/)
+  })
+
+  it('native/tools.ts stub comment no longer claims Phase 6 delivery', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/layer4-distribution/native/tools.ts'), 'utf-8')
+    expect(src).not.toMatch(/real implementations in Phase 6/)
+  })
+})
+
 // ─── v2.7.1: agent.ts pure helpers lifted to agent/providers.ts ──────────
 // The big agent.ts file used to hold routing + conversion helpers inline.
 // They moved out so agent.ts can focus on the async generator loop. This

@@ -1,6 +1,7 @@
 // Shared web search and fetch helpers used by webSearch, webFetch, and deepResearch tools
 
 import type { ToolCallOpts } from '../types'
+import { getBraveKey } from '../lib/keys'
 
 export interface SearchResult {
   title: string
@@ -50,7 +51,7 @@ export async function duckDuckGoSearch(query: string, count: number): Promise<Se
 
 // Unified search: tries Brave first, falls back to DuckDuckGo
 export async function webSearch(query: string, count: number, opts: ToolCallOpts): Promise<SearchResult[]> {
-  const braveKey = opts.settings?.braveSearchApiKey || process.env.BRAVE_SEARCH_API_KEY
+  const braveKey = getBraveKey(opts.settings)
   if (braveKey) {
     try {
       return await braveSearch(query, count, braveKey)

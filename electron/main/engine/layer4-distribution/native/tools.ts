@@ -1,5 +1,8 @@
 // Nohi-native channel tools — Skill bundle export + MCP server registration.
-// Stubs for Phase 4; real implementations in Phase 6.
+// Still stubs as of v2.7.x: the tool surface is registered so the agent can
+// plan around these channels, but the actual bundle writer / MCP registrar
+// lands in a future phase (nohi_skill_export and nohi_mcp_register appear
+// in ~/Desktop/session-checkpoint.md as the two remaining unstubbed items).
 
 import type { ToolDef, ToolResult, ToolCallOpts } from '../../types'
 import { clampNumber, runTool } from '../../tools/_utils'
