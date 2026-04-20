@@ -143,17 +143,32 @@ describe('regression: v2.0.1 — MCP errors are actionable', () => {
   })
 })
 
-// ─── v2.5.x: chat page references resolved (no dangling identifiers) ─────
+// ─── v2.5.x / v2.6.1: chat page + providers module stay in sync ──────────
+// Originally guarded against a v1.6 bug where helpers were dropped during a
+// split. In v2.6.1 the helpers moved into src/lib/providers.ts; chat page
+// must still reference them (import path checked) AND providers must still
+// export them (declaration checked there).
 
-describe('regression: chat page identifiers resolve', () => {
-  it('chat/page.tsx defines PROVIDER_LABELS, PROVIDER_MODELS, getContextWindow, formatCtxLabel', () => {
+describe('regression: chat page + providers module are in sync', () => {
+  const HELPERS = ['PROVIDER_LABELS', 'PROVIDER_MODELS', 'getContextWindow', 'formatCtxLabel', 'shortenPath'] as const
+
+  it('chat/page.tsx still references every helper', () => {
     const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
-    // Each is both *used* (reference) and *defined* (declaration) in the same file
-    for (const ident of ['PROVIDER_LABELS', 'PROVIDER_MODELS', 'getContextWindow', 'formatCtxLabel', 'shortenPath']) {
+    for (const ident of HELPERS) {
       expect(src, `identifier "${ident}" referenced`).toMatch(new RegExp(`\\b${ident}\\b`))
-      // Declaration — `const PROVIDER_LABELS =` or `function getContextWindow(`
-      expect(src, `identifier "${ident}" declared`).toMatch(
-        new RegExp(`(?:const|function)\\s+${ident}\\b`),
+    }
+  })
+
+  it('chat/page.tsx imports helpers from @/lib/providers', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/from\s+['"]@\/lib\/providers['"]/)
+  })
+
+  it('providers.ts exports every helper', () => {
+    const src = readFileSync(join(ROOT, 'src/lib/providers.ts'), 'utf-8')
+    for (const ident of HELPERS) {
+      expect(src, `identifier "${ident}" exported`).toMatch(
+        new RegExp(`export\\s+(?:const|function)\\s+${ident}\\b`),
       )
     }
   })
