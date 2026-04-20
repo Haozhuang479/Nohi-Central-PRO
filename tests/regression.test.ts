@@ -173,3 +173,99 @@ describe('regression: v2.0.1 — Brave→DuckDuckGo fallback visible in tool out
     expect(src).toMatch(/via\s+\$\{source\}/)
   })
 })
+
+// ─── v2.5.2: markdown renderers must route through DOMPurify ─────────────
+// MessageList.tsx used to ship a local renderMarkdown with no HTML escape —
+// tool results from webFetch / gdrive / shopify flowed directly into
+// dangerouslySetInnerHTML (XSS). chat-markdown.ts is the single sanitized path.
+
+describe('regression: v2.5.2 — MessageList routes through DOMPurify', () => {
+  it('MessageList.tsx no longer defines a local renderMarkdown', () => {
+    const src = readFileSync(join(ROOT, 'src/components/MessageList.tsx'), 'utf-8')
+    expect(src).not.toMatch(/function\s+renderMarkdown\s*\(/)
+  })
+
+  it('MessageList.tsx imports renderMarkdown from @/lib/chat-markdown', () => {
+    const src = readFileSync(join(ROOT, 'src/components/MessageList.tsx'), 'utf-8')
+    expect(src).toMatch(/import\s*\{\s*renderMarkdown\s*\}\s*from\s*['"]@\/lib\/chat-markdown['"]/)
+  })
+
+  it('chat-markdown.ts sanitizes via DOMPurify', () => {
+    const src = readFileSync(join(ROOT, 'src/lib/chat-markdown.ts'), 'utf-8')
+    expect(src).toMatch(/DOMPurify\.sanitize/)
+    expect(src).toMatch(/export function renderMarkdown/)
+  })
+})
+
+// ─── v2.5.2: shell:open-external has a protocol allowlist ────────────────
+// Without the allowlist, prompt-injected javascript:/file:/data: URLs could
+// be opened via ipcMain → shell.openExternal → RCE inside Electron.
+
+describe('regression: v2.5.2 — shell:open-external protocol allowlist', () => {
+  it('main/index.ts declares SAFE_EXTERNAL_PROTOCOLS', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8')
+    expect(src).toMatch(/SAFE_EXTERNAL_PROTOCOLS/)
+    expect(src).toMatch(/http:/)
+    expect(src).toMatch(/https:/)
+  })
+
+  it('main/index.ts does not have a raw shell.openExternal pass-through handler', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8')
+    // Previous buggy line: `ipcMain.handle('shell:open-external', (_e, url: string) => shell.openExternal(url))`
+    expect(src).not.toMatch(/ipcMain\.handle\(['"]shell:open-external['"],\s*\(_e,\s*url:\s*string\)\s*=>\s*shell\.openExternal\(url\)\)/)
+  })
+
+  it('preload returns structured { ok } result', () => {
+    const src = readFileSync(join(ROOT, 'electron/preload/index.ts'), 'utf-8')
+    expect(src).toMatch(/openExternal[\s\S]{0,200}ok:\s*true/)
+  })
+})
+
+// ─── v2.5.2: ai-console page deleted, dead i18n keys removed ─────────────
+// Duplicate chat UI at /seller/ai-console had 2 of the XSS sinks above and
+// 0 routing references. Removing it kills 825 LOC and the XSS sources.
+
+describe('regression: v2.5.2 — ai-console page removed', () => {
+  it('ai-console page file is deleted', () => {
+    expect(
+      () => readFileSync(join(ROOT, 'src/pages/seller/ai-console/page.tsx'), 'utf-8'),
+    ).toThrow()
+  })
+
+  it('language-context has no nav.aiConsole key', () => {
+    const src = readFileSync(join(ROOT, 'src/lib/language-context.tsx'), 'utf-8')
+    expect(src).not.toMatch(/['"]nav\.aiConsole['"]/)
+    expect(src).not.toMatch(/['"]aiConsole\.title['"]/)
+  })
+
+  it('App.tsx still has a catch-all redirect to /chat', () => {
+    const src = readFileSync(join(ROOT, 'src/App.tsx'), 'utf-8')
+    expect(src).toMatch(/Navigate\s+to=['"]\/chat['"]/)
+  })
+})
+
+// ─── v2.5.2: header-level CSP + deny window.open ─────────────────────────
+// Meta-only CSP misses about:blank / file:// navigations. setWindowOpenHandler
+// forces window.open to fail — callers must go through shell:open-external
+// which is now protocol-restricted.
+
+describe('regression: v2.5.2 — header CSP + deny window.open', () => {
+  it('main/index.ts installs CSP via onHeadersReceived', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8')
+    expect(src).toMatch(/onHeadersReceived/)
+    expect(src).toMatch(/Content-Security-Policy/)
+    expect(src).toMatch(/CSP_POLICY/)
+  })
+
+  it('main/index.ts denies window.open via setWindowOpenHandler', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8')
+    expect(src).toMatch(/setWindowOpenHandler/)
+    expect(src).toMatch(/action:\s*['"]deny['"]/)
+  })
+
+  it('repo no longer contains a self-nested Nohi-Central-PRO/ directory on disk', () => {
+    expect(
+      () => readFileSync(join(ROOT, 'Nohi-Central-PRO/package.json'), 'utf-8'),
+    ).toThrow()
+  })
+})

@@ -30,7 +30,7 @@ declare global {
         openDir(): Promise<string | null>
         openFile(): Promise<Array<{ path: string; isImage: boolean; content?: string; base64?: string; mediaType?: string }> | null>
       }
-      openExternal(url: string): Promise<void>
+      openExternal(url: string): Promise<{ ok: true } | { ok: false; error: string }>
       testApiKey(provider: string, apiKey: string): Promise<{ success: boolean; error?: string }>
       voice: {
         transcribe(pcmBuffer: ArrayBuffer, sampleRate: number): Promise<{ success: boolean; text?: string; error?: string }>

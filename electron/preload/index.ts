@@ -100,8 +100,9 @@ contextBridge.exposeInMainWorld('nohi', {
       ipcRenderer.invoke('dialog:open-file'),
   },
 
-  // External links
-  openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:open-external', url),
+  // External links (rejects non-http(s)/mailto protocols in main)
+  openExternal: (url: string): Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('shell:open-external', url),
 
   // Diagnostics — fetch a bundle (version + log tail) for bug reports
   diagnostics: {

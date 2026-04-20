@@ -18,7 +18,6 @@ const translations: Record<string, Record<Language, string>> = {
   "nav.channelControl": { en: "Channel Control", zh: "渠道管理" },
   "nav.analytics": { en: "Analytics", zh: "数据分析" },
   "nav.settings": { en: "Settings", zh: "设置" },
-  "nav.aiConsole": { en: "AI Console", zh: "AI 控制台" },
   "nav.seller": { en: "Seller Central", zh: "商家中心" },
   "nav.csvUpload": { en: "CSV Upload", zh: "CSV 导入" },
   "nav.connectors": { en: "Connectors", zh: "连接器" },
@@ -210,22 +209,6 @@ const translations: Record<string, Record<Language, string>> = {
   "discover.random": { en: "Random", zh: "随机" },
   "discover.categoriesDesc": { en: "Browse all product categories in the Nohi taxonomy.", zh: "浏览 Nohi 分类中的所有产品类别。" },
 
-  // ── AI Console ────────────────────────────────────────────────────────────────
-  "aiConsole.title": { en: "AI Console", zh: "AI 控制台" },
-  "aiConsole.description": {
-    en: "Run agentic tasks, manage sessions, and monitor AI usage.",
-    zh: "执行智能体任务、管理会话并监控 AI 使用情况。",
-  },
-  "aiConsole.planMode": { en: "Plan Mode", zh: "计划模式" },
-  "aiConsole.approvePlan": { en: "Approve Plan", zh: "批准计划" },
-  "aiConsole.editPlan": { en: "Edit Plan", zh: "编辑计划" },
-  "aiConsole.cancelPlan": { en: "Cancel Plan", zh: "取消计划" },
-  "aiConsole.typeCommand": { en: "Type a command or ask anything…", zh: "输入指令或提问…" },
-  "aiConsole.send": { en: "Send", zh: "发送" },
-  "aiConsole.sessionHistory": { en: "Session History", zh: "历史会话" },
-  "aiConsole.costToday": { en: "Cost Today", zh: "今日费用" },
-  "aiConsole.provider": { en: "Provider", zh: "提供商" },
-  "aiConsole.newSession": { en: "New Session", zh: "新建会话" },
   // legacy ai.* keys kept for backward compatibility
   "ai.console": { en: "AI Console", zh: "AI 控制台" },
   "ai.placeholder": { en: "Ask anything or type a command…", zh: "问任何问题或输入命令…" },

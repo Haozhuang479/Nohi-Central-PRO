@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, session } from 'electron'
 import { join } from 'path'
 import { homedir, tmpdir } from 'os'
 import { mkdir, writeFile, unlink, readFile, access } from 'fs/promises'
@@ -81,6 +81,23 @@ async function reloadSkills(): Promise<void> {
 
 // ─── Window ────────────────────────────────────────────────────────────────
 
+// Mirrors src/index.html meta CSP. Duplicated at the header level so it also
+// covers navigations, about:blank and file:// loads where the meta tag does not
+// apply. Update both in lockstep.
+const CSP_POLICY =
+  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https: nohi-file:; connect-src 'self' https://nohi-product-search-1049263400892.us-west1.run.app https://api.anthropic.com https://api.openai.com https://api.moonshot.cn https://api.minimax.chat https://api.deepseek.com https://api.firecrawl.dev; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
+
+function installHeaderCsp(): void {
+  session.defaultSession.webRequest.onHeadersReceived((details, cb) => {
+    cb({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [CSP_POLICY],
+      },
+    })
+  })
+}
+
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
@@ -97,6 +114,10 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   })
+
+  // Any window.open from the renderer is blocked. Links meant to open in the
+  // browser must go through the protocol-whitelisted shell:open-external IPC.
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
   mainWindow.on('ready-to-show', () => {
     mainWindow!.show()
@@ -120,6 +141,8 @@ app.whenReady().then(async () => {
   await mkdir(join(homedir(), '.nohi', 'logs'), { recursive: true })
   // Apply telemetry setting from disk on boot
   setTelemetryEnabled(!!(getSettings() as { telemetryEnabled?: boolean }).telemetryEnabled)
+  // Install header-level CSP (defence-in-depth with the meta tag in index.html)
+  installHeaderCsp()
   log('info', '[startup] Nohi Central PRO main process up')
 
   // Register custom protocol to serve local images in the renderer.
@@ -489,7 +512,21 @@ ipcMain.handle('dialog:open-file', async () => {
   return files.filter(Boolean)
 })
 
-ipcMain.handle('shell:open-external', (_e, url: string) => shell.openExternal(url))
+const SAFE_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:'])
+ipcMain.handle('shell:open-external', async (_e, url: unknown): Promise<{ ok: true } | { ok: false; error: string }> => {
+  if (typeof url !== 'string') return { ok: false, error: 'url must be string' }
+  let protocol: string
+  try {
+    protocol = new URL(url).protocol
+  } catch {
+    return { ok: false, error: 'invalid URL' }
+  }
+  if (!SAFE_EXTERNAL_PROTOCOLS.has(protocol)) {
+    return { ok: false, error: `protocol ${protocol} is not allowed` }
+  }
+  await shell.openExternal(url)
+  return { ok: true }
+})
 
 // API key validation
 const OPENAI_TEST_URLS: Record<string, string> = {
