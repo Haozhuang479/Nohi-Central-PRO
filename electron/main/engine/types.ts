@@ -47,6 +47,12 @@ export interface ToolCallOpts {
   workingDir: string
   onProgress?: (text: string) => void
   settings?: NohiSettings
+  /**
+   * Request user approval before running this tool call. Returns 'approve' or
+   * 'deny'. Wired by agent.ts so the toolUseId is already captured in the
+   * closure — callers only need to describe the risk.
+   */
+  requestApproval?: (req: { toolName: string; reason: string; input: unknown }) => Promise<'approve' | 'deny'>
 }
 
 // ─── Streaming events (sent to renderer via IPC) ──────────────────────────
@@ -58,6 +64,13 @@ export type AgentEvent =
   | { type: 'tool_result'; id: string; name: string; output: string; isError: boolean }
   | { type: 'todos_updated'; todos: Array<{ content: string; activeForm: string; status: 'pending' | 'in_progress' | 'completed' }> }
   | { type: 'message_complete'; usage: { input_tokens: number; output_tokens: number } }
+  | {
+      type: 'tool_approval_request'
+      toolUseId: string
+      toolName: string
+      input: Record<string, unknown>
+      reason: string
+    }
   | { type: 'error'; message: string }
   | { type: 'done' }
 
@@ -134,6 +147,17 @@ export interface NohiSettings {
   // Local-only telemetry (opt-in). Writes to ~/.nohi/telemetry/<YYYY-MM>.jsonl.
   // Nothing is uploaded — purely a local record the user can inspect.
   telemetryEnabled?: boolean
+  // Bash tool consent policy.
+  //   off        → never ask (legacy behaviour, warn only)
+  //   dangerous  → ask only when the command matches DANGEROUS_PATTERNS (default)
+  //   always     → ask for every bash invocation
+  //   allowlist  → ask unless the command matches one of bashAllowlist patterns
+  bashConsentMode?: 'off' | 'dangerous' | 'always' | 'allowlist'
+  // Regex patterns (JS source) that bypass consent when bashConsentMode='allowlist'.
+  bashAllowlist?: string[]
+  // One-shot flag: true when a prior boot dropped plaintext API keys during
+  // the safeStorage migration. UI reads once and clears.
+  migratedPlaintextKeys?: boolean
 }
 
 export interface HookConfig {

@@ -39,6 +39,8 @@ declare global {
       agent: {
         run(session: Session): void
         abort(sessionId: string): void
+        /** Reply to a tool_approval_request event from the agent. */
+        approve(toolUseId: string, decision: 'approve' | 'deny'): void
         onEvent(callback: (event: AgentEvent) => void): () => void
       }
     }

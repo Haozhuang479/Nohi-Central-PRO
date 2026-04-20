@@ -38,6 +38,12 @@ export async function dispatchToolCall(
     workingDir: string
     settings: NohiSettings
     onEvent: (e: AgentEvent) => void
+    /**
+     * Bridge to the renderer for interactive consent. When set, tools can
+     * invoke this to prompt the user before acting. agent.ts binds the
+     * toolUseId into the closure so tools only need to supply a reason.
+     */
+    requestApproval?: (toolUseId: string, req: { toolName: string; reason: string; input: unknown }) => Promise<'approve' | 'deny'>
   },
 ): Promise<DispatchOutcome> {
   const events: AgentEvent[] = []
@@ -63,10 +69,15 @@ export async function dispatchToolCall(
   }
 
   // Execute. Tool's onProgress is forwarded as text_delta events.
+  // requestApproval closes over the toolUseId so tools just describe the risk.
+  const bindApproval = ctx.requestApproval
   const result = await tool.call(call.input, {
     workingDir: ctx.workingDir,
     settings: ctx.settings,
     onProgress: (text) => ctx.onEvent({ type: 'text_delta', delta: text }),
+    requestApproval: bindApproval
+      ? (req) => bindApproval(call.toolCallId, req)
+      : undefined,
   })
   const output = result.error ?? result.output ?? ''
   const isError = !!result.error

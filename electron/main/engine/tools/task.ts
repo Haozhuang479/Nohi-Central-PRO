@@ -11,6 +11,10 @@ let runAgentImpl:
       settings: import('../types').NohiSettings,
       activeSkills: import('../types').Skill[],
       onEvent: (e: import('../types').AgentEvent) => void,
+      requestApproval?: (
+        toolUseId: string,
+        req: { toolName: string; reason: string; input: unknown },
+      ) => Promise<'approve' | 'deny'>,
     ) => AsyncGenerator<import('../types').AgentEvent>)
   | null = null
 

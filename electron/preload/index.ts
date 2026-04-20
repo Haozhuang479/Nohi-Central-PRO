@@ -131,6 +131,9 @@ contextBridge.exposeInMainWorld('nohi', {
   agent: {
     run: (session: Session): void => ipcRenderer.send('agent:run', session),
     abort: (sessionId: string): void => ipcRenderer.send('agent:abort', sessionId),
+    /** Respond to a tool_approval_request event. Call with 'approve' or 'deny'. */
+    approve: (toolUseId: string, decision: 'approve' | 'deny'): void =>
+      ipcRenderer.send('agent:approval', toolUseId, decision),
     onEvent: (callback: (event: AgentEvent) => void): (() => void) => {
       const handler = (_: Electron.IpcRendererEvent, event: AgentEvent): void => callback(event)
       ipcRenderer.on('agent:event', handler)

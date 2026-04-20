@@ -94,6 +94,9 @@ export const NohiSettingsSchema = z.object({
     enabled: z.boolean().optional(),
   })).optional(),
   telemetryEnabled: z.boolean().optional(),
+  bashConsentMode: z.enum(['off', 'dangerous', 'always', 'allowlist']).optional(),
+  bashAllowlist: z.array(z.string().max(500)).max(200).optional(),
+  migratedPlaintextKeys: z.boolean().optional(),
 })
 
 // ─── Automation ────────────────────────────────────────────────────────────

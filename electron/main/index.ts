@@ -692,6 +692,20 @@ ipcMain.on('agent:abort', (_e, sessionId: string) => {
   abortedSessions.add(sessionId)
 })
 
+// Consent resolvers keyed by toolUseId. Populated when a tool calls
+// opts.requestApproval; drained by the agent:approval IPC reply from renderer.
+const pendingApprovals = new Map<string, (decision: 'approve' | 'deny') => void>()
+
+ipcMain.on('agent:approval', (_e, toolUseId: unknown, decision: unknown) => {
+  if (typeof toolUseId !== 'string') return
+  const verdict = decision === 'approve' ? 'approve' : 'deny'
+  const resolver = pendingApprovals.get(toolUseId)
+  if (resolver) {
+    resolver(verdict)
+    pendingApprovals.delete(toolUseId)
+  }
+})
+
 ipcMain.on('agent:run', async (event, session: Session) => {
   const settings = getSettings()
   const webContents = event.sender
@@ -708,10 +722,39 @@ ipcMain.on('agent:run', async (event, session: Session) => {
     }
   }
 
-  try {
-    const generator = runAgent(session, settings, activeSkills, (agentEvent) => {
-      send('agent:event', agentEvent)
+  // Consent bridge — emits a tool_approval_request event to the renderer and
+  // waits for a matching agent:approval IPC reply. If the window closes or
+  // agent aborts, resolve as 'deny' so the tool returns an error instead of
+  // hanging. Per-tool timeout keeps a zombie modal from blocking the loop.
+  const requestApproval = (
+    toolUseId: string,
+    req: { toolName: string; reason: string; input: unknown },
+  ): Promise<'approve' | 'deny'> =>
+    new Promise<'approve' | 'deny'>((resolve) => {
+      const cleanup = (verdict: 'approve' | 'deny'): void => {
+        pendingApprovals.delete(toolUseId)
+        resolve(verdict)
+      }
+      pendingApprovals.set(toolUseId, cleanup)
+      send('agent:event', {
+        type: 'tool_approval_request',
+        toolUseId,
+        toolName: req.toolName,
+        input: req.input as Record<string, unknown>,
+        reason: req.reason,
+      })
     })
+
+  try {
+    const generator = runAgent(
+      session,
+      settings,
+      activeSkills,
+      (agentEvent) => {
+        send('agent:event', agentEvent)
+      },
+      requestApproval,
+    )
 
     for await (const agentEvent of generator) {
       // Check abort flag between every streamed event
@@ -728,5 +771,9 @@ ipcMain.on('agent:run', async (event, session: Session) => {
     send('agent:event', { type: 'done' })
   } finally {
     abortedSessions.delete(session.id)
+    // Drain any stale resolvers for this session — a dropped window would
+    // otherwise leak promises that never settle.
+    for (const resolver of pendingApprovals.values()) resolver('deny')
+    pendingApprovals.clear()
   }
 })

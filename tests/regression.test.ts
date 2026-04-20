@@ -244,6 +244,109 @@ describe('regression: v2.5.2 — ai-console page removed', () => {
   })
 })
 
+// ─── v2.6.0: Bash consent + approval IPC wiring ──────────────────────────
+// Ensures the consent bridge between agent tools and the renderer stays
+// wired. If someone refactors any link, the test drops — preventing a
+// silent regression back to bash "warn only".
+
+describe('regression: v2.6 — bash consent is plumbed end-to-end', () => {
+  it('bash.ts exports shouldRequireBashConsent + covers the 4 modes', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/tools/bash.ts'), 'utf-8')
+    expect(src).toMatch(/export function shouldRequireBashConsent/)
+    for (const mode of ['off', 'dangerous', 'always', 'allowlist']) {
+      expect(src, `mode ${mode}`).toMatch(new RegExp(`['"]${mode}['"]`))
+    }
+  })
+
+  it('bash.ts fails closed when consent is required but no channel exists', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/tools/bash.ts'), 'utf-8')
+    expect(src).toMatch(/no approval channel/i)
+  })
+
+  it('agent/dispatch forwards requestApproval to tool.call opts', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/agent/dispatch.ts'), 'utf-8')
+    expect(src).toMatch(/requestApproval/)
+    expect(src).toMatch(/bindApproval/)
+  })
+
+  it('main/index.ts ships pendingApprovals + agent:approval IPC handler', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8')
+    expect(src).toMatch(/pendingApprovals/)
+    expect(src).toMatch(/ipcMain\.on\(['"]agent:approval['"]/)
+    expect(src).toMatch(/tool_approval_request/)
+  })
+
+  it('preload exposes agent.approve', () => {
+    const src = readFileSync(join(ROOT, 'electron/preload/index.ts'), 'utf-8')
+    expect(src).toMatch(/approve:\s*\(toolUseId/)
+    expect(src).toMatch(/agent:approval/)
+  })
+
+  it('AgentEvent union includes tool_approval_request', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/types.ts'), 'utf-8')
+    expect(src).toMatch(/tool_approval_request/)
+  })
+
+  it('renderer ships ToolConsent modal hooked into App.tsx', () => {
+    const comp = readFileSync(join(ROOT, 'src/components/chat/tool-consent.tsx'), 'utf-8')
+    expect(comp).toMatch(/tool_approval_request/)
+    expect(comp).toMatch(/window\.nohi\.agent\.approve/)
+    const app = readFileSync(join(ROOT, 'src/App.tsx'), 'utf-8')
+    expect(app).toMatch(/<ToolConsent\s*\/>/)
+  })
+
+  it('App.tsx surfaces the plaintext-key migration toast', () => {
+    const app = readFileSync(join(ROOT, 'src/App.tsx'), 'utf-8')
+    expect(app).toMatch(/migratedPlaintextKeys/)
+    expect(app).toMatch(/toast\.warning/)
+  })
+})
+
+// ─── v2.6.0: safeStorage hard cutover for API keys ───────────────────────
+// The old settings.json format stored provider keys in plaintext. Any copy
+// of ~/.nohi/settings.json leaked everything. Now they go through Electron
+// safeStorage and plaintext leftovers are dropped on read.
+
+describe('regression: v2.6 — API keys encrypted at rest', () => {
+  it('store.ts imports safeStorage from electron', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/store.ts'), 'utf-8')
+    expect(src).toMatch(/import[^;]*safeStorage[^;]*from\s+['"]electron['"]/)
+  })
+
+  it('store.ts enumerates all 9 secret fields', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/store.ts'), 'utf-8')
+    for (const field of [
+      'anthropicApiKey',
+      'openaiApiKey',
+      'googleApiKey',
+      'kimiApiKey',
+      'minimaxApiKey',
+      'deepseekApiKey',
+      'braveSearchApiKey',
+      'firecrawlApiKey',
+      'catalogApiToken',
+    ]) {
+      expect(src, `field ${field} in SECRET_FIELDS`).toMatch(new RegExp(`['"]${field}['"]`))
+    }
+  })
+
+  it('store.ts drops plaintext values and flags the migration', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/store.ts'), 'utf-8')
+    expect(src).toMatch(/migratedPlaintextKeys/)
+    expect(src).toMatch(/ENC_PREFIX/)
+  })
+
+  it('store.ts refuses to save when safeStorage is unavailable', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/store.ts'), 'utf-8')
+    expect(src).toMatch(/safeStorage is unavailable/)
+  })
+
+  it('NohiSettings type includes migratedPlaintextKeys flag', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/types.ts'), 'utf-8')
+    expect(src).toMatch(/migratedPlaintextKeys/)
+  })
+})
+
 // ─── v2.5.2: header-level CSP + deny window.open ─────────────────────────
 // Meta-only CSP misses about:blank / file:// navigations. setWindowOpenHandler
 // forces window.open to fail — callers must go through shell:open-external

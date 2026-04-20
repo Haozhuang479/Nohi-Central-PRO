@@ -1,5 +1,6 @@
 // Simple synchronous JSON settings store (replaces electron-store)
 import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from 'fs'
+import { safeStorage } from 'electron'
 import { join } from 'path'
 import { homedir } from 'os'
 import type { NohiSettings } from './engine/types'
@@ -7,6 +8,45 @@ import { log, logError } from './engine/lib/logger'
 
 const CONFIG_DIR = join(homedir(), '.nohi')
 const CONFIG_FILE = join(CONFIG_DIR, 'settings.json')
+
+// Fields that are sensitive credentials and must never be written in plain
+// text. Any value read from disk that isn't prefixed with ENC_PREFIX is
+// dropped on load — "hard cutover" from the v2.5 plaintext format.
+const SECRET_FIELDS = [
+  'anthropicApiKey',
+  'openaiApiKey',
+  'googleApiKey',
+  'kimiApiKey',
+  'minimaxApiKey',
+  'deepseekApiKey',
+  'braveSearchApiKey',
+  'firecrawlApiKey',
+  'catalogApiToken',
+] as const
+const ENC_PREFIX = 'enc:'
+
+function safeEncrypt(plain: string): string | null {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return null
+    const buf = safeStorage.encryptString(plain)
+    return ENC_PREFIX + buf.toString('base64')
+  } catch (err) {
+    logError(err, '[store] safeStorage.encryptString failed')
+    return null
+  }
+}
+
+function safeDecrypt(stored: string): string | undefined {
+  if (!stored.startsWith(ENC_PREFIX)) return undefined
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return undefined
+    const buf = Buffer.from(stored.slice(ENC_PREFIX.length), 'base64')
+    return safeStorage.decryptString(buf)
+  } catch (err) {
+    logError(err, '[store] safeStorage.decryptString failed — dropping field')
+    return undefined
+  }
+}
 
 const DEFAULTS: NohiSettings = {
   defaultModel: 'claude-sonnet-4-6',
@@ -22,6 +62,8 @@ const DEFAULTS: NohiSettings = {
   autoUpdateBrandContext: false,
   notifyDesktop: true,
   notifyChannelSync: true,
+  bashConsentMode: 'dangerous',
+  bashAllowlist: [],
 }
 
 function ensureDir(): void {
@@ -89,14 +131,33 @@ export function getSettings(): NohiSettings {
       if (!modelMatchesProvider) {
         parsed.defaultModel = providerDefaultModels[parsed.primaryProvider] ?? DEFAULTS.defaultModel
       }
-      // Strip any API keys that look like URLs or invalid values
-      const API_KEY_FIELDS = [
-        'anthropicApiKey', 'openaiApiKey', 'kimiApiKey', 'minimaxApiKey', 'deepseekApiKey',
-      ] as const
-      for (const field of API_KEY_FIELDS) {
-        if (parsed[field] !== undefined && !isValidApiKey(parsed[field])) {
+      // ── Secret fields ─────────────────────────────────────────────────
+      // Anything stored as `enc:<base64>` is decrypted via safeStorage.
+      // Plaintext leftovers from v2.5.1 and earlier are dropped on the
+      // floor — users must re-enter them. Set a flag the UI reads once to
+      // surface a friendly toast explaining why.
+      let droppedPlaintext = false
+      for (const field of SECRET_FIELDS) {
+        const v = parsed[field]
+        if (typeof v !== 'string' || !v) {
           delete parsed[field]
+          continue
         }
+        if (v.startsWith(ENC_PREFIX)) {
+          const decrypted = safeDecrypt(v)
+          if (decrypted && isValidApiKey(decrypted)) {
+            parsed[field] = decrypted
+          } else {
+            delete parsed[field]
+          }
+        } else {
+          // Pre-encryption plaintext value or a URL leak — drop it.
+          delete parsed[field]
+          droppedPlaintext = true
+        }
+      }
+      if (droppedPlaintext) {
+        parsed.migratedPlaintextKeys = true
       }
       // Remove empty-string fields so DEFAULTS fill them properly
       for (const key of ['workingDir', 'skillsDir'] as const) {
@@ -121,7 +182,29 @@ export function getLastSettingsError(): { message: string; timestamp: number; pa
 export function saveSettings(settings: NohiSettings): void {
   try {
     ensureDir()
-    const json = JSON.stringify(settings, null, 2)
+    // Encrypt every known secret field before touching disk. If safeStorage
+    // is unavailable (e.g. Linux without libsecret), refuse the save and
+    // surface the failure via lastSaveError — plaintext credentials on disk
+    // are exactly the bug this phase is fixing.
+    const onDisk: Record<string, unknown> = { ...settings } as Record<string, unknown>
+    // migratedPlaintextKeys is a one-shot runtime signal; never persist.
+    delete onDisk.migratedPlaintextKeys
+    for (const field of SECRET_FIELDS) {
+      const v = onDisk[field]
+      if (typeof v !== 'string' || !v) {
+        delete onDisk[field]
+        continue
+      }
+      if (v.startsWith(ENC_PREFIX)) continue // already encrypted (shouldn't happen via UI, but idempotent)
+      const encrypted = safeEncrypt(v)
+      if (!encrypted) {
+        throw new Error(
+          'safeStorage is unavailable on this platform — cannot persist API keys securely. Install libsecret (Linux) or check system keychain access.',
+        )
+      }
+      onDisk[field] = encrypted
+    }
+    const json = JSON.stringify(onDisk, null, 2)
     // Atomic write: write to temp, then rename. Avoids half-written settings on crash.
     const tmp = `${CONFIG_FILE}.tmp.${process.pid}`
     writeFileSync(tmp, json, 'utf-8')

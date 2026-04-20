@@ -351,7 +351,17 @@ export async function* runAgent(
   session: Session,
   settings: NohiSettings,
   activeSkills: Skill[],
-  onEvent: (event: AgentEvent) => void
+  onEvent: (event: AgentEvent) => void,
+  /**
+   * Optional hook used by the main process to ask the renderer for per-tool
+   * consent. Raw form (takes a toolUseId so child dispatches can re-bind).
+   * Subagents spawned via the Task / bulk_apply tools currently run without
+   * consent — they'll inherit it in a follow-up change.
+   */
+  requestApproval?: (
+    toolUseId: string,
+    req: { toolName: string; reason: string; input: unknown },
+  ) => Promise<'approve' | 'deny'>,
 ): AsyncGenerator<AgentEvent> {
   // ── Telemetry: session bookkeeping (opt-in; no-op when disabled) ────────
   const sessionStart = Date.now()
@@ -511,7 +521,7 @@ export async function* runAgent(
         const toolStart = Date.now()
         const outcome = await dispatchToolCall(
           { toolCallId: tc.id, toolName: tc.name, input },
-          { allTools, workingDir, settings, onEvent },
+          { allTools, workingDir, settings, onEvent, requestApproval },
         )
         toolCalls++
         if (outcome.isError) toolErrors++
@@ -705,7 +715,7 @@ export async function* runAgent(
       const toolStart = Date.now()
       const outcome = await dispatchToolCall(
         { toolCallId: toolCall.id, toolName: toolCall.name, input: toolCall.input },
-        { allTools, workingDir, settings, onEvent },
+        { allTools, workingDir, settings, onEvent, requestApproval },
       )
       toolCalls++
       if (outcome.isError) toolErrors++

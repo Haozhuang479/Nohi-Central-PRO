@@ -9,7 +9,16 @@ import { castString, clampNumber, castBoolean, runTool } from './_utils'
 
 // Lazy-registered runner reference — same pattern as task.ts to avoid circular imports.
 let runAgentImpl:
-  | ((session: Session, settings: NohiSettings, activeSkills: Skill[], onEvent: (e: AgentEvent) => void) => AsyncGenerator<AgentEvent>)
+  | ((
+      session: Session,
+      settings: NohiSettings,
+      activeSkills: Skill[],
+      onEvent: (e: AgentEvent) => void,
+      requestApproval?: (
+        toolUseId: string,
+        req: { toolName: string; reason: string; input: unknown },
+      ) => Promise<'approve' | 'deny'>,
+    ) => AsyncGenerator<AgentEvent>)
   | null = null
 let activeSkillsRef: Skill[] = []
 

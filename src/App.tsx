@@ -5,6 +5,7 @@ import { ChannelStateProvider } from '@/lib/channel-state'
 import { Toaster } from '@/components/ui/sonner'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { CrashWatcher } from '@/components/crash-watcher'
+import { ToolConsent } from '@/components/chat/tool-consent'
 import { toast } from 'sonner'
 import type { NohiSettings } from '../electron/main/engine/types'
 
@@ -102,7 +103,21 @@ export default function App() {
   useEffect(() => {
     window.nohi.settings
       .get()
-      .then(setSettings)
+      .then((s) => {
+        setSettings(s)
+        // One-shot post-upgrade notice: any plaintext API key was dropped
+        // by the safeStorage migration. Tell the user once, then clear the
+        // flag by persisting the settings without it.
+        if (s.migratedPlaintextKeys) {
+          toast.warning(
+            'Saved API keys were cleared during a security upgrade. Please re-enter them in Settings — they will now be encrypted via your OS keychain.',
+            { duration: 15000 },
+          )
+          const { migratedPlaintextKeys: _drop, ...rest } = s
+          void _drop
+          window.nohi.settings.save(rest).catch(() => {})
+        }
+      })
       .catch((err: unknown) => {
         setLoadError(String(err))
       })
@@ -136,6 +151,7 @@ export default function App() {
   return (
     <ErrorBoundary>
     <CrashWatcher />
+    <ToolConsent />
     <LanguageProvider>
       <ChannelStateProvider>
         <HashRouter>
