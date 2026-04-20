@@ -45,21 +45,22 @@ describe('regression: v1.6 — grep error returns specific message, not "Grep fa
 
 // ─── v1.4.0: OpenAI provider routing supported ────────────────────────────
 
-describe('regression: v1.4 — OpenAI / Kimi / DeepSeek / Minimax provider routing', () => {
-  it('agent.ts has detectProvider for openai', () => {
-    const src = readFileSync(join(ROOT, 'electron/main/engine/agent.ts'), 'utf-8')
-    expect(src).toMatch(/detectProvider/)
+describe('regression: v1.4 / v2.7.1 — provider routing (now in agent/providers.ts)', () => {
+  it('agent/providers.ts routes each non-Anthropic provider', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/agent/providers.ts'), 'utf-8')
     expect(src).toMatch(/return\s+['"]openai['"]/)
     expect(src).toMatch(/return\s+['"]kimi['"]/)
     expect(src).toMatch(/return\s+['"]deepseek['"]/)
+    expect(src).toMatch(/return\s+['"]minimax['"]/)
   })
 
-  it('agent.ts does NOT contain "Only Anthropic models are supported"', () => {
+  it('agent.ts imports detectProvider + has no local Anthropic-only gate', () => {
     const src = readFileSync(join(ROOT, 'electron/main/engine/agent.ts'), 'utf-8')
+    expect(src).toMatch(/import[\s\S]{0,200}detectProvider[\s\S]{0,200}from\s+['"]\.\/agent\/providers['"]/)
     expect(src).not.toMatch(/Only Anthropic models are supported/)
   })
 
-  it('agent.ts handles o-series and gpt-5 reasoning_effort', () => {
+  it('agent.ts still handles o-series and gpt-5 reasoning_effort', () => {
     const src = readFileSync(join(ROOT, 'electron/main/engine/agent.ts'), 'utf-8')
     expect(src).toMatch(/reasoning_effort/)
   })
@@ -233,6 +234,57 @@ describe('regression: v2.5.2 — shell:open-external protocol allowlist', () => 
   it('preload returns structured { ok } result', () => {
     const src = readFileSync(join(ROOT, 'electron/preload/index.ts'), 'utf-8')
     expect(src).toMatch(/openExternal[\s\S]{0,200}ok:\s*true/)
+  })
+})
+
+// ─── v2.7.1: agent.ts pure helpers lifted to agent/providers.ts ──────────
+// The big agent.ts file used to hold routing + conversion helpers inline.
+// They moved out so agent.ts can focus on the async generator loop. This
+// regression prevents anyone from accidentally copy-pasting a helper back
+// into agent.ts and shadowing the canonical version.
+
+describe('regression: v2.7.1 — agent helpers live in agent/providers.ts', () => {
+  const HELPERS = ['detectProvider', 'getAnthropicClient', 'getOpenAIApiKey', 'getMaxTokens', 'supportsExtendedThinking', 'toOpenAITools', 'toOpenAIMessages'] as const
+
+  it('providers.ts exports every helper', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/agent/providers.ts'), 'utf-8')
+    for (const ident of HELPERS) {
+      expect(src, `exports ${ident}`).toMatch(new RegExp(`export\\s+(?:function|const)\\s+${ident}\\b`))
+    }
+  })
+
+  it('agent.ts does not redeclare any extracted helper', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/agent.ts'), 'utf-8')
+    for (const ident of HELPERS) {
+      // Must NOT appear in a local `function foo(` or `const foo =` declaration
+      expect(src, `no local decl of ${ident}`).not.toMatch(
+        new RegExp(`^\\s*(?:function|const)\\s+${ident}\\b`, 'm'),
+      )
+    }
+  })
+})
+
+// ─── v2.7.1: analytics mock data + MetricCard extracted ──────────────────
+
+describe('regression: v2.7.1 — analytics page leaner', () => {
+  it('mock data lives in its own module', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/seller/analytics/mock-data.ts'), 'utf-8')
+    for (const arr of ['viewsData', 'ordersData', 'conversionData', 'projections']) {
+      expect(src, `exports ${arr}`).toMatch(new RegExp(`export\\s+const\\s+${arr}\\b`))
+    }
+  })
+
+  it('MetricCard lives in its own module', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/seller/analytics/metric-card.tsx'), 'utf-8')
+    expect(src).toMatch(/export\s+function\s+MetricCard/)
+  })
+
+  it('analytics/page.tsx imports extracted pieces and does not redeclare them', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/seller/analytics/page.tsx'), 'utf-8')
+    expect(src).toMatch(/from\s+["']\.\/mock-data["']/)
+    expect(src).toMatch(/from\s+["']\.\/metric-card["']/)
+    expect(src).not.toMatch(/^function\s+MetricCard/m)
+    expect(src).not.toMatch(/^const\s+viewsData\s*=/m)
   })
 })
 

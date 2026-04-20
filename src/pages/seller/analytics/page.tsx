@@ -21,41 +21,8 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "@/components/ui/chart"
-
-// --- Data ---
-
-const viewsData = [
-  { month: "Sep", views: 420 },
-  { month: "Oct", views: 680 },
-  { month: "Nov", views: 910 },
-  { month: "Dec", views: 1240 },
-  { month: "Jan", views: 1580 },
-  { month: "Feb", views: 2130 },
-]
-
-const ordersData = [
-  { month: "Sep", orders: 8 },
-  { month: "Oct", orders: 14 },
-  { month: "Nov", orders: 22 },
-  { month: "Dec", orders: 31 },
-  { month: "Jan", orders: 38 },
-  { month: "Feb", orders: 42 },
-]
-
-const conversionData = [
-  { month: "Sep", rate: 1.9 },
-  { month: "Oct", rate: 2.1 },
-  { month: "Nov", rate: 2.4 },
-  { month: "Dec", rate: 2.5 },
-  { month: "Jan", rate: 2.4 },
-  { month: "Feb", rate: 3.2 },
-]
-
-const projections = [
-  { month: "Mar", projected: 2600, actual: null },
-  { month: "Apr", projected: 3100, actual: null },
-  { month: "May", projected: 3800, actual: null },
-]
+import { viewsData, ordersData, conversionData, projections } from "./mock-data"
+import { MetricCard } from "./metric-card"
 
 export default function AnalyticsPage() {
   const { language } = useLanguage()
@@ -757,37 +724,3 @@ export default function AnalyticsPage() {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-function MetricCard({
-  label,
-  value,
-  change,
-  positive,
-}: {
-  label: string
-  value: string
-  change: string
-  positive: boolean
-}) {
-  return (
-    <div className="rounded-2xl bg-secondary/50 bg-popover p-5 flex flex-col gap-2">
-      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        {label}
-      </span>
-      <span className="text-2xl font-semibold text-foreground tabular-nums">
-        {value}
-      </span>
-      <span
-        className={cn(
-          "text-xs font-medium tabular-nums",
-          positive ? "text-foreground" : "text-destructive",
-        )}
-      >
-        {change}
-      </span>
-    </div>
-  )
-}
