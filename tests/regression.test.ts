@@ -236,6 +236,39 @@ describe('regression: v2.5.2 — shell:open-external protocol allowlist', () => 
   })
 })
 
+// ─── v2.7.0: settings sections extracted + Agent Safety UI landed ─────────
+// The settings page historically grew to 982 LOC in a single file. Phase D
+// pulls Store Information into its own component and ships the Agent Safety
+// UI (Phase B1 deferred this — bashConsentMode had a backend but no frontend).
+
+describe('regression: v2.7 — settings sections modularised', () => {
+  it('StoreSection lives in src/components/settings', () => {
+    expect(
+      () => readFileSync(join(ROOT, 'src/components/settings/store-section.tsx'), 'utf-8'),
+    ).not.toThrow()
+  })
+
+  it('AgentSafetySection renders bash consent UI + allowlist', () => {
+    const src = readFileSync(join(ROOT, 'src/components/settings/agent-safety-section.tsx'), 'utf-8')
+    expect(src).toMatch(/bashConsentMode/)
+    expect(src).toMatch(/bashAllowlist/)
+    // All 4 modes show up as object keys in the MODE_LABELS table
+    for (const mode of ['off', 'dangerous', 'always', 'allowlist']) {
+      expect(src, `mode ${mode} rendered`).toMatch(new RegExp(`\\b${mode}\\b`))
+    }
+  })
+
+  it('settings/page.tsx imports both extracted sections + does not redeclare their constants', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/seller/settings/page.tsx'), 'utf-8')
+    expect(src).toMatch(/from\s+['"]@\/components\/settings\/store-section['"]/)
+    expect(src).toMatch(/from\s+['"]@\/components\/settings\/agent-safety-section['"]/)
+    // Constants moved into store-section.tsx — must not also live in page.tsx
+    expect(src).not.toMatch(/const\s+STORE_CATEGORIES\s*=/)
+    expect(src).not.toMatch(/const\s+GMV_RANGES\s*=/)
+    expect(src).not.toMatch(/const\s+TEAM_SIZES\s*=/)
+  })
+})
+
 // ─── v2.5.2: ai-console page deleted, dead i18n keys removed ─────────────
 // Duplicate chat UI at /seller/ai-console had 2 of the XSS sinks above and
 // 0 routing references. Removing it kills 825 LOC and the XSS sources.

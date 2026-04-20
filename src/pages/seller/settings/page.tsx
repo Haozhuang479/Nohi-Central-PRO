@@ -14,6 +14,8 @@ import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/component
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
+import { StoreSection } from '@/components/settings/store-section'
+import { AgentSafetySection } from '@/components/settings/agent-safety-section'
 import type { NohiSettings } from '../../../../electron/main/engine/types'
 
 // ─── Types ────────────────────────────────────────────────────────────────
@@ -81,27 +83,6 @@ const MOCK_CARDS = [
   { id: '2', brand: 'Mastercard', last4: '5555', expiry: '08/26' },
 ]
 
-const STORE_CATEGORIES = [
-  'Fashion & Apparel',
-  'Electronics',
-  'Home & Garden',
-  'Beauty & Personal Care',
-  'Sports & Outdoors',
-  'Food & Beverage',
-  'Toys & Games',
-  'Books & Media',
-  'Other',
-]
-
-const GMV_RANGES = [
-  'Under $10k/month',
-  '$10k–$50k/month',
-  '$50k–$200k/month',
-  '$200k–$1M/month',
-  'Over $1M/month',
-]
-
-const TEAM_SIZES = ['1 (Solo)', '2–5', '6–20', '21–50', '50+']
 
 // ─── Section wrapper ──────────────────────────────────────────────────────
 
@@ -444,100 +425,15 @@ export default function SettingsPage({ settings, onSave }: SettingsPageProps) {
         title={language === 'zh' ? '店铺信息' : 'Store Information'}
         defaultOpen
       >
-        <div className="p-6 space-y-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-                {language === 'zh' ? '品牌名称' : 'Brand Name'}
-              </label>
-              <Input
-                value={draft.storeName ?? ''}
-                onChange={(e) => { patch('storeName', e.target.value); setStoreEditing(true) }}
-                placeholder={language === 'zh' ? '您的品牌名称' : 'Your brand name'}
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-                {language === 'zh' ? '店铺 URL' : 'Store URL'}
-              </label>
-              <Input
-                type="url"
-                value={draft.storeUrl ?? ''}
-                onChange={(e) => { patch('storeUrl', e.target.value); setStoreEditing(true) }}
-                placeholder="https://yourstore.com"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-                {language === 'zh' ? '品类' : 'Category'}
-              </label>
-              <Select
-                value={draft.storeCategory ?? ''}
-                onValueChange={(v) => { patch('storeCategory', v); setStoreEditing(true) }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={language === 'zh' ? '选择品类' : 'Select category'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {STORE_CATEGORIES.map((c) => (
-                    <SelectItem key={c} value={c}>{c}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-                {language === 'zh' ? 'GMV 范围' : 'GMV Range'}
-              </label>
-              <Select
-                value={draft.storeGmvRange ?? ''}
-                onValueChange={(v) => { patch('storeGmvRange', v); setStoreEditing(true) }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={language === 'zh' ? '选择 GMV 范围' : 'Select GMV range'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {GMV_RANGES.map((r) => (
-                    <SelectItem key={r} value={r}>{r}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-                {language === 'zh' ? '团队规模' : 'Team Size'}
-              </label>
-              <Select
-                value={draft.teamSize ?? ''}
-                onValueChange={(v) => { patch('teamSize', v); setStoreEditing(true) }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={language === 'zh' ? '选择团队规模' : 'Select team size'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {TEAM_SIZES.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="flex gap-2 pt-2">
-            <Button size="sm" onClick={saveStore}>
-              {language === 'zh' ? '保存' : 'Save'}
-            </Button>
-            {storeEditing && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => { setDraft({ ...settings }); setStoreEditing(false) }}
-              >
-                {language === 'zh' ? '取消' : 'Cancel'}
-              </Button>
-            )}
-          </div>
-        </div>
+        <StoreSection
+          draft={draft}
+          patch={patch}
+          storeEditing={storeEditing}
+          setStoreEditing={setStoreEditing}
+          onSaveStore={saveStore}
+          onResetDraft={() => setDraft({ ...settings })}
+          language={language}
+        />
       </SettingsSection>
 
       {/* ── 2. AI Providers ─────────────────────────────────────────────── */}
@@ -786,6 +682,16 @@ export default function SettingsPage({ settings, onSave }: SettingsPageProps) {
       </SettingsSection>
 
       {/* ── 5b. Privacy & Diagnostics ────────────────────────────────── */}
+      {/* ── 5b. Agent Safety (bash consent) ──────────────────────────── */}
+      <SettingsSection title={language === 'zh' ? '智能体安全' : 'Agent Safety'}>
+        <AgentSafetySection
+          draft={draft}
+          patch={patch}
+          onSave={onSave}
+          language={language}
+        />
+      </SettingsSection>
+
       <SettingsSection title={language === 'zh' ? '隐私与诊断' : 'Privacy & Diagnostics'}>
         <div className="p-6 space-y-3">
           <div className="flex items-start justify-between gap-4">
