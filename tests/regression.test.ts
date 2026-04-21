@@ -322,6 +322,41 @@ describe('regression: v2.8 — attachment size + binary guard', () => {
   })
 })
 
+// ─── v2.8.1: session management UX ───────────────────────────────────────
+
+describe('regression: v2.8.1 — session rename + duplicate wired', () => {
+  it('SessionList exposes onRename + onDuplicate props', () => {
+    const src = readFileSync(join(ROOT, 'src/components/chat/session-list.tsx'), 'utf-8')
+    expect(src).toMatch(/onRename\?:/)
+    expect(src).toMatch(/onDuplicate\?:/)
+    expect(src).toMatch(/onDoubleClick/)
+  })
+
+  it('chat/layout.tsx provides renameSession + duplicateSession', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/layout.tsx'), 'utf-8')
+    expect(src).toMatch(/renameSession/)
+    expect(src).toMatch(/duplicateSession/)
+  })
+})
+
+describe('regression: v2.8.1 — search uses body cache', () => {
+  it('chat/layout.tsx reuses a session-body Map across keystrokes', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/layout.tsx'), 'utf-8')
+    expect(src).toMatch(/bodyCacheRef/)
+    expect(src).toMatch(/useRef<Map<string, Session>>\(new Map\(\)\)/)
+  })
+})
+
+describe('regression: v2.8.1 — markdown export keeps images + tool blocks', () => {
+  it('chat/layout.tsx exports tool_use / tool_result / image blocks', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/layout.tsx'), 'utf-8')
+    expect(src).toMatch(/case 'tool_use'/)
+    expect(src).toMatch(/case 'tool_result'/)
+    expect(src).toMatch(/case 'image'/)
+    expect(src).toMatch(/encodeURIComponent/)
+  })
+})
+
 // ─── v2.7.2: polish + doc drift ───────────────────────────────────────────
 
 describe('regression: v2.7.2 — small hardening + doc drift fixes', () => {

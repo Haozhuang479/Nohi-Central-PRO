@@ -145,19 +145,65 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
     if (!full) return
     let content: string
     let filename: string
+    // Filename: percent-encode so Chinese/emoji titles stay distinguishable
+    // instead of being stripped to underscores.
+    const safeName = encodeURIComponent((full.title || 'chat').slice(0, 80)).replace(/%/g, '_')
     if (format === 'json') {
       content = JSON.stringify(full, null, 2)
-      filename = `${(full.title || 'chat').replace(/[^a-z0-9-]+/gi, '_').slice(0, 60)}.json`
+      filename = `${safeName}.json`
     } else {
-      const lines: string[] = [`# ${full.title || 'Chat'}`, '', `_${new Date(full.createdAt).toLocaleString()} — ${full.model}_`, '']
+      // Richer markdown export. Tool_use + tool_result blocks get
+      // `<details>` wrappers so long outputs stay collapsed by default in
+      // any markdown reader. Images get preserved inline (truncated if
+      // wildly large) so a reader without the original session still sees
+      // something useful.
+      const lines: string[] = [
+        `# ${full.title || 'Chat'}`,
+        '',
+        `_${new Date(full.createdAt).toLocaleString()} — ${full.model}_`,
+        '',
+      ]
       for (const m of full.messages) {
-        const text = typeof m.content === 'string' ? m.content
-          : (m.content as Array<{ type: string; text?: string }>)
-              .filter((b) => b.type === 'text').map((b) => b.text ?? '').join('\n')
-        lines.push(`## ${m.role === 'user' ? 'User' : 'Assistant'}`, '', text, '')
+        lines.push(`## ${m.role === 'user' ? 'User' : 'Assistant'}`, '')
+        if (typeof m.content === 'string') {
+          lines.push(m.content, '')
+          continue
+        }
+        const blocks = m.content as Array<Record<string, unknown>>
+        for (const b of blocks) {
+          switch (b.type) {
+            case 'text':
+              lines.push(String(b.text ?? ''), '')
+              break
+            case 'image': {
+              const src = b.source as { type?: string; media_type?: string; data?: string } | undefined
+              if (src?.type === 'base64' && src.data) {
+                const dataUrl = `data:${src.media_type ?? 'image/png'};base64,${src.data.slice(0, 100_000)}`
+                lines.push(`![image](${dataUrl})`, '')
+              } else {
+                lines.push('_[attached image]_', '')
+              }
+              break
+            }
+            case 'tool_use': {
+              const name = String(b.name ?? 'tool')
+              const input = JSON.stringify(b.input ?? {}, null, 2)
+              lines.push(`<details><summary>Tool: ${name}</summary>`, '', '```json', input, '```', '', '</details>', '')
+              break
+            }
+            case 'tool_result': {
+              const body = typeof b.content === 'string' ? b.content : JSON.stringify(b.content, null, 2)
+              const head = b.is_error ? 'Tool error' : 'Tool result'
+              lines.push(`<details><summary>${head}</summary>`, '', body, '', '</details>', '')
+              break
+            }
+            default:
+              break
+          }
+        }
       }
       content = lines.join('\n')
-      filename = `${(full.title || 'chat').replace(/[^a-z0-9-]+/gi, '_').slice(0, 60)}.md`
+      filename = `${safeName}.md`
     }
     const blob = new Blob([content], { type: format === 'json' ? 'application/json' : 'text/markdown' })
     const url = URL.createObjectURL(blob)
@@ -204,7 +250,53 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
     [pendingDeleteId, sessions],
   )
 
+  // Inline rename — pulls the current session from disk, patches the title,
+  // persists. The sidebar store updates optimistically so typing feels
+  // instant even if the disk write is a beat behind.
+  const renameSession = useCallback(async (id: string, title: string) => {
+    setSessions((prev) => prev.map((s) => (s.id === id ? { ...s, title } : s)))
+    if (session?.id === id) {
+      setSession({ ...session, title })
+    }
+    if (typeof window !== 'undefined' && window.nohi?.sessions) {
+      try {
+        const full = await window.nohi.sessions.load(id)
+        if (full) {
+          await window.nohi.sessions.save({ ...full, title, updatedAt: Date.now() })
+        }
+      } catch {
+        // ignore; optimistic update already applied
+      }
+    }
+  }, [session, setSession, setSessions])
+
+  // Duplicate — loads the full session, writes a copy with a fresh id.
+  const duplicateSession = useCallback(async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (typeof window === 'undefined' || !window.nohi?.sessions) return
+    try {
+      const full = await window.nohi.sessions.load(id)
+      if (!full) return
+      const copy: Session = {
+        ...full,
+        id: crypto.randomUUID(),
+        title: `${full.title} (${language === 'zh' ? '副本' : 'copy'})`,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }
+      await window.nohi.sessions.save(copy)
+      setSessions((prev) => [copy, ...prev])
+      setSession(copy)
+    } catch {
+      // ignore
+    }
+  }, [language, setSession, setSessions])
+
   // Full-text content search across all sessions (debounced via IPC)
+  // Cache of loaded session bodies, keyed by session id. First keystroke
+  // still fans out IPC loads; every subsequent keystroke hits memory so
+  // typing doesn't re-issue dozens of reads to disk.
+  const bodyCacheRef = React.useRef<Map<string, Session>>(new Map())
   const [contentMatchIds, setContentMatchIds] = useState<Set<string> | null>(null)
   useEffect(() => {
     if (!search.trim() || search.length < 2) { setContentMatchIds(null); return }
@@ -213,29 +305,42 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
       if (!window.nohi?.sessions) return
       const matches = new Set<string>()
       const q = search.toLowerCase()
-      // Load each session's full body and look for matches in message text
       for (const s of sessions) {
+        if (cancelled) return
         if ((s.title || '').toLowerCase().includes(q)) {
           matches.add(s.id)
           continue
         }
-        try {
-          const full = await window.nohi.sessions.load(s.id)
-          if (!full) continue
-          const found = full.messages.some((m) => {
-            const text = typeof m.content === 'string' ? m.content
-              : (m.content as Array<{ type: string; text?: string }>)
-                  .filter((b) => b.type === 'text').map((b) => b.text ?? '').join(' ')
-            return text.toLowerCase().includes(q)
-          })
-          if (found) matches.add(s.id)
-        } catch { /* ignore */ }
+        let full = bodyCacheRef.current.get(s.id)
+        if (!full) {
+          try {
+            const loaded = await window.nohi.sessions.load(s.id)
+            if (!loaded) continue
+            full = loaded
+            bodyCacheRef.current.set(s.id, loaded)
+          } catch { continue }
+        }
         if (cancelled) return
+        const found = full.messages.some((m) => {
+          const text = typeof m.content === 'string' ? m.content
+            : (m.content as Array<{ type: string; text?: string }>)
+                .filter((b) => b.type === 'text').map((b) => b.text ?? '').join(' ')
+          return text.toLowerCase().includes(q)
+        })
+        if (found) matches.add(s.id)
       }
       if (!cancelled) setContentMatchIds(matches)
     }, 250)
     return () => { cancelled = true; clearTimeout(timer) }
   }, [search, sessions])
+
+  // Invalidate the session-body cache when a session is saved by the agent
+  // loop — otherwise the cache serves stale bodies for the active chat.
+  useEffect(() => {
+    if (session?.id) {
+      bodyCacheRef.current.set(session.id, session)
+    }
+  }, [session])
 
   // Filter + group sessions (title fast-path + content match overlay)
   const filteredSessions = useMemo(() => {
@@ -346,6 +451,8 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
               onHover={setHoveredId}
               onExport={exportSession}
               onDelete={requestDeleteSession}
+              onRename={renameSession}
+              onDuplicate={duplicateSession}
             />
           )}
 

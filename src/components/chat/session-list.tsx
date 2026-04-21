@@ -1,7 +1,7 @@
 // Virtualized session list for the chat sidebar.
 // Falls back to plain rendering when count < 50 (virtualization overhead isn't worth it for small lists).
 
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { cn } from '@/lib/utils'
 import type { Session } from '../../../electron/main/engine/types'
@@ -18,6 +18,10 @@ interface Props {
   onHover: (id: string | null) => void
   onExport: (id: string, format: 'md' | 'json', e: React.MouseEvent) => void
   onDelete: (id: string, e: React.MouseEvent) => void
+  /** Inline rename. Commits the new title via sessions:save. */
+  onRename?: (id: string, title: string) => void
+  /** Duplicate a session as a new one with its messages. */
+  onDuplicate?: (id: string, e: React.MouseEvent) => void
 }
 
 type Row =
@@ -59,6 +63,8 @@ export function SessionList(props: Props) {
                 onHover={props.onHover}
                 onExport={props.onExport}
                 onDelete={props.onDelete}
+                onRename={props.onRename}
+                onDuplicate={props.onDuplicate}
               />
             ))}
           </div>
@@ -109,6 +115,8 @@ function VirtualSessionList(props: Props & { rows: Row[] }) {
                   onHover={props.onHover}
                   onExport={props.onExport}
                   onDelete={props.onDelete}
+                  onRename={props.onRename}
+                  onDuplicate={props.onDuplicate}
                 />
               )}
             </div>
@@ -138,13 +146,46 @@ interface RowProps {
   onHover: (id: string | null) => void
   onExport: (id: string, format: 'md' | 'json', e: React.MouseEvent) => void
   onDelete: (id: string, e: React.MouseEvent) => void
+  onRename?: (id: string, title: string) => void
+  onDuplicate?: (id: string, e: React.MouseEvent) => void
 }
 
-function SessionRow({ session, active, hovered, language, onSelect, onHover, onExport, onDelete }: RowProps) {
+function SessionRow({
+  session,
+  active,
+  hovered,
+  language,
+  onSelect,
+  onHover,
+  onExport,
+  onDelete,
+  onRename,
+  onDuplicate,
+}: RowProps) {
+  // Inline rename state — entered by double-clicking the title. Enter commits,
+  // Escape cancels, blur commits (matches macOS Finder renaming semantics).
+  const [editing, setEditing] = useState(false)
+  const [draftTitle, setDraftTitle] = useState(session.title)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing) {
+      setDraftTitle(session.title)
+      requestAnimationFrame(() => {
+        inputRef.current?.select()
+      })
+    }
+  }, [editing, session.title])
+
+  const commitRename = (): void => {
+    const next = draftTitle.trim()
+    setEditing(false)
+    if (!next || next === session.title) return
+    onRename?.(session.id, next.slice(0, 200))
+  }
+
   return (
-    <button
-      type="button"
-      onClick={() => onSelect(session)}
+    <div
       onMouseEnter={() => onHover(session.id)}
       onMouseLeave={() => onHover(null)}
       className={cn(
@@ -154,11 +195,40 @@ function SessionRow({ session, active, hovered, language, onSelect, onHover, onE
           : 'text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground',
       )}
     >
-      <span className="flex-1 text-xs truncate pr-12">
-        {session.title || (language === 'zh' ? '新对话' : 'New Chat')}
-      </span>
-      {hovered && (
+      {editing ? (
+        <input
+          ref={inputRef}
+          value={draftTitle}
+          onChange={(e) => setDraftTitle(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') { e.preventDefault(); commitRename() }
+            else if (e.key === 'Escape') { e.preventDefault(); setEditing(false) }
+          }}
+          onBlur={commitRename}
+          className="flex-1 bg-sidebar-accent/80 rounded px-1 py-0 text-xs text-sidebar-foreground outline-none"
+        />
+      ) : (
+        <button
+          type="button"
+          onClick={() => onSelect(session)}
+          onDoubleClick={() => onRename && setEditing(true)}
+          className="flex-1 text-xs truncate pr-16 text-left"
+        >
+          {session.title || (language === 'zh' ? '新对话' : 'New Chat')}
+        </button>
+      )}
+      {hovered && !editing && (
         <span className="absolute right-1 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+          {onDuplicate && (
+            <button
+              type="button"
+              onClick={(e) => onDuplicate(session.id, e)}
+              title={language === 'zh' ? '复制对话' : 'Duplicate chat'}
+              className="flex items-center justify-center size-5 rounded-md text-sidebar-foreground/40 hover:text-sidebar-foreground hover:bg-sidebar-accent transition-colors text-[11px]"
+            >
+              ⧉
+            </button>
+          )}
           <button
             type="button"
             onClick={(e) => onExport(session.id, 'md', e)}
@@ -176,6 +246,6 @@ function SessionRow({ session, active, hovered, language, onSelect, onHover, onE
           </button>
         </span>
       )}
-    </button>
+    </div>
   )
 }
