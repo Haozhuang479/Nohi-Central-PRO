@@ -55,7 +55,15 @@ export function ToolConsent(): JSX.Element | null {
       : String(request.input)
 
   return (
-    <AlertDialog open={true}>
+    <AlertDialog
+      open={true}
+      // Esc / outside-click / Radix internal dismiss all funnel through
+      // onOpenChange. Anything other than "user pressed Approve" defaults
+      // to deny — the safest possible interpretation of ambiguous intent.
+      onOpenChange={(open) => {
+        if (!open) respond('deny')
+      }}
+    >
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Approve tool call: {request.toolName}</AlertDialogTitle>

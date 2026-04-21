@@ -4,6 +4,16 @@ import { Outlet, useOutletContext, Link } from 'react-router-dom'
 import { Titlebar } from '@/components/shell/titlebar'
 import { CommandPalette } from '@/components/shell/command-palette'
 import { SessionList } from '@/components/chat/session-list'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { useAIStore } from '@/store/ai-store'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
@@ -60,6 +70,7 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [search, setSearch] = useState('')
   const [hoveredId, setHoveredId] = useState<string | null>(null)
+  const searchInputRef = React.useRef<HTMLInputElement>(null)
 
   // Load sessions on mount
   useEffect(() => {
@@ -74,6 +85,30 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
         })
         .catch(() => {})
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Chat-action bus — the shell-layer CommandPalette dispatches
+  // CustomEvent('nohi:chat-action', { detail }) for new session, sidebar
+  // toggle, search focus. Keeping the palette decoupled from chat state
+  // means it can live in the shell without hoisting this layout up.
+  useEffect(() => {
+    const onChatAction = (e: Event): void => {
+      const detail = (e as CustomEvent<string>).detail
+      if (detail === 'new-session') {
+        void createNewSession()
+      } else if (detail === 'toggle-sidebar') {
+        setSidebarOpen((v) => !v)
+      } else if (detail === 'focus-search') {
+        setSidebarOpen(true)
+        // Wait a frame so the input is actually mounted + focusable.
+        requestAnimationFrame(() => searchInputRef.current?.focus())
+      }
+    }
+    window.addEventListener('nohi:chat-action', onChatAction)
+    return () => window.removeEventListener('nohi:chat-action', onChatAction)
+  // createNewSession is intentionally omitted — its deps already force the
+  // handler closure to refresh when needed.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -135,8 +170,21 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }, [])
 
-  const deleteSession = useCallback(async (id: string, e: React.MouseEvent) => {
+  // Two-step delete: clicking the × on a session row opens the confirm
+  // dialog; only after explicit Delete does the session actually go away.
+  // Sessions are persisted to disk and there is no undo — a single-click
+  // destroy was the #1 "oh no" moment flagged in the v2.7.2 chat audit.
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+
+  const requestDeleteSession = useCallback((id: string, e: React.MouseEvent) => {
     e.stopPropagation()
+    setPendingDeleteId(id)
+  }, [])
+
+  const confirmDelete = useCallback(async () => {
+    const id = pendingDeleteId
+    if (!id) return
+    setPendingDeleteId(null)
     if (typeof window !== 'undefined' && window.nohi?.sessions) {
       try {
         await window.nohi.sessions.delete(id)
@@ -149,7 +197,12 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
       const remaining = sessions.filter((s) => s.id !== id)
       setSession(remaining.length > 0 ? remaining[0] : null)
     }
-  }, [session, sessions, setSessions, setSession])
+  }, [pendingDeleteId, session, sessions, setSessions, setSession])
+
+  const pendingDeleteSession = useMemo(
+    () => (pendingDeleteId ? sessions.find((s) => s.id === pendingDeleteId) : null),
+    [pendingDeleteId, sessions],
+  )
 
   // Full-text content search across all sessions (debounced via IPC)
   const [contentMatchIds, setContentMatchIds] = useState<Set<string> | null>(null)
@@ -263,6 +316,7 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
           <div className="px-3 pb-2 shrink-0">
             <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-sidebar-accent/50">
               <input
+                ref={searchInputRef}
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -291,7 +345,7 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
               onSelect={setSession}
               onHover={setHoveredId}
               onExport={exportSession}
-              onDelete={deleteSession}
+              onDelete={requestDeleteSession}
             />
           )}
 
@@ -324,6 +378,36 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
 
       {/* Cmd+K command palette */}
       <CommandPalette />
+
+      {/* Delete-session confirmation */}
+      <AlertDialog
+        open={!!pendingDeleteId}
+        onOpenChange={(open) => !open && setPendingDeleteId(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {language === 'zh' ? '删除这个对话?' : 'Delete this chat?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {language === 'zh'
+                ? `"${pendingDeleteSession?.title || '新对话'}" 将被永久删除，无法恢复。`
+                : `"${pendingDeleteSession?.title || 'New Chat'}" will be permanently deleted. This cannot be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              {language === 'zh' ? '取消' : 'Cancel'}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {language === 'zh' ? '删除' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

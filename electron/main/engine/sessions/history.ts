@@ -1,7 +1,7 @@
 // Session persistence — saves/loads conversations to ~/.nohi/sessions/
 // Adapted from Claude Code history.ts patterns
 
-import { readFile, writeFile, readdir, mkdir, unlink } from 'fs/promises'
+import { readFile, writeFile, readdir, mkdir, unlink, rename } from 'fs/promises'
 import { join } from 'path'
 import { homedir } from 'os'
 import type { Session, SessionMessage } from '../types'
@@ -17,10 +17,18 @@ function sessionPath(id: string): string {
   return join(SESSIONS_DIR, `${id}.json`)
 }
 
+/**
+ * Atomic save: write to `<id>.json.tmp.<pid>`, then rename over the target.
+ * Guarantees callers of loadSession / listSessions never see a half-written
+ * file on crash. Mirrors the pattern used by store.ts for settings.json.
+ */
 export async function saveSession(session: Session): Promise<void> {
   await ensureDir()
   session.updatedAt = Date.now()
-  await writeFile(sessionPath(session.id), JSON.stringify(session, null, 2), 'utf-8')
+  const dest = sessionPath(session.id)
+  const tmp = `${dest}.tmp.${process.pid}`
+  await writeFile(tmp, JSON.stringify(session, null, 2), 'utf-8')
+  await rename(tmp, dest)
 }
 
 export async function loadSession(id: string): Promise<Session | null> {

@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils'
 import { useAIStore } from '@/store/ai-store'
-import { useCostStore, calcCost } from '@/store/cost-store'
+import { useCostStore } from '@/store/cost-store'
 import { Bell, Settings } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
@@ -37,11 +37,13 @@ function modelShortLabel(model: string): string {
 
 export function Titlebar() {
   const { provider, model } = useAIStore()
-  const { todayInputTokens, todayOutputTokens, getTotalTokens } = useCostStore()
+  // Statusbar and Titlebar share the single todaySpend accumulator so the
+  // two numbers can never disagree.
+  const { todaySpend, getTotalTokens } = useCostStore()
   const location = useLocation()
   const navigate = useNavigate()
 
-  const cost = calcCost(todayInputTokens, todayOutputTokens, model)
+  const cost = todaySpend
   const totalTokens = getTotalTokens()
 
   return (

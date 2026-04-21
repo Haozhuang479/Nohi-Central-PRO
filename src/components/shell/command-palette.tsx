@@ -26,6 +26,10 @@ import {
   PenLine,
   DollarSign,
   Clock,
+  MessageCirclePlus,
+  PanelLeft,
+  Search,
+  MessageCircle,
 } from 'lucide-react'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -69,6 +73,14 @@ export function CommandPalette() {
   const isZh = language === 'zh'
 
   const navigationCommands: CommandEntry[] = [
+    {
+      id: 'chat',
+      label: 'Chat',
+      labelZh: '对话',
+      icon: <MessageCircle className="size-4" />,
+      action: () => go('/chat'),
+      group: 'Navigate',
+    },
     {
       id: 'home',
       label: 'Home',
@@ -119,7 +131,55 @@ export function CommandPalette() {
     },
   ]
 
+  // Chat-specific actions are broadcast as CustomEvents so the palette can
+  // live in the shell layer without reaching into chat-layout state. Both
+  // ChatLayout (new session, toggle sidebar) and ChatPage (focus search)
+  // listen on these event names. Outside /chat, New Chat still navigates.
+  const fireChat = (detail: string): void => {
+    window.dispatchEvent(new CustomEvent('nohi:chat-action', { detail }))
+    setOpen(false)
+  }
+
+  const chatActionCommands: CommandEntry[] = [
+    {
+      id: 'chat-new',
+      label: 'New Chat',
+      labelZh: '新对话',
+      icon: <MessageCirclePlus className="size-4" />,
+      action: () => {
+        // Navigate to /chat first so the layout-level listener is mounted.
+        navigate('/chat')
+        // Allow the Outlet to mount before firing — layout's useEffect runs
+        // synchronously on mount, so a microtask is enough.
+        queueMicrotask(() => fireChat('new-session'))
+      },
+      group: 'Actions',
+      shortcut: '⌘N',
+    },
+    {
+      id: 'chat-toggle-sidebar',
+      label: 'Toggle Session Sidebar',
+      labelZh: '切换会话侧栏',
+      icon: <PanelLeft className="size-4" />,
+      action: () => fireChat('toggle-sidebar'),
+      group: 'Actions',
+    },
+    {
+      id: 'chat-search',
+      label: 'Search Sessions',
+      labelZh: '搜索对话',
+      icon: <Search className="size-4" />,
+      action: () => {
+        navigate('/chat')
+        queueMicrotask(() => fireChat('focus-search'))
+      },
+      group: 'Actions',
+      shortcut: '⌘F',
+    },
+  ]
+
   const actionCommands: CommandEntry[] = [
+    ...chatActionCommands,
     {
       id: 'sync-catalog',
       label: 'Sync Catalog',

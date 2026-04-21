@@ -1,5 +1,5 @@
 import { useAIStore } from '@/store/ai-store'
-import { useCostStore, calcCost } from '@/store/cost-store'
+import { useCostStore } from '@/store/cost-store'
 import { useChannelState } from '@/lib/channel-state'
 import { cn } from '@/lib/utils'
 
@@ -42,11 +42,14 @@ function modelShortLabel(model: string): string {
 
 export function Statusbar() {
   const { provider, model, isRunning } = useAIStore()
-  const { todayInputTokens, todayOutputTokens, getTotalTokens } = useCostStore()
+  // Read the accumulated spend directly instead of recomputing from a single
+  // model — the day's tokens may span multiple models and we already paid
+  // the right rate at addEntry time.
+  const { todaySpend, getTotalTokens } = useCostStore()
   const { channelStates } = useChannelState()
 
   const totalTokens = getTotalTokens()
-  const cost = calcCost(todayInputTokens, todayOutputTokens, model)
+  const cost = todaySpend
 
   const activeChannels = Object.values(channelStates).filter(
     (s) => s === 'active' || s === 'always-on'

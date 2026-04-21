@@ -237,6 +237,91 @@ describe('regression: v2.5.2 — shell:open-external protocol allowlist', () => 
   })
 })
 
+// ─── v2.8.0: chat reliability essentials ──────────────────────────────────
+// Audit in v2.7.2 turned up a cluster of chat-side papercuts. This block
+// pins the fixes.
+
+describe('regression: v2.8 — cost-store wired end-to-end', () => {
+  it('chat page feeds cost-store on message_complete', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/useCostStore\.getState\(\)\.addEntry/)
+    expect(src).toMatch(/message_complete/)
+  })
+
+  it('statusbar + titlebar read todaySpend instead of recomputing', () => {
+    for (const rel of ['src/components/shell/statusbar.tsx', 'src/components/shell/titlebar.tsx']) {
+      const src = readFileSync(join(ROOT, rel), 'utf-8')
+      expect(src, `${rel} uses todaySpend`).toMatch(/todaySpend/)
+      expect(src, `${rel} no longer imports calcCost`).not.toMatch(/import\s*\{[^}]*\bcalcCost\b/)
+    }
+  })
+
+  it('cost-store exposes rolloverIfNewDay', () => {
+    const src = readFileSync(join(ROOT, 'src/store/cost-store.ts'), 'utf-8')
+    expect(src).toMatch(/rolloverIfNewDay/)
+    expect(src).toMatch(/todayDate/)
+  })
+})
+
+describe('regression: v2.8 — session delete requires confirmation', () => {
+  it('layout uses AlertDialog + two-step delete', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/layout.tsx'), 'utf-8')
+    expect(src).toMatch(/pendingDeleteId/)
+    expect(src).toMatch(/AlertDialog/)
+    expect(src).toMatch(/confirmDelete/)
+    // The old one-click path must be gone
+    expect(src).not.toMatch(/const deleteSession\s*=\s*useCallback/)
+  })
+})
+
+describe('regression: v2.8 — Esc aborts a running agent', () => {
+  it('chat/page.tsx registers a keydown listener that calls stopAgent', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/key\s*!==\s*['"]Escape['"]/)
+    expect(src).toMatch(/stopAgent\(\)/)
+  })
+})
+
+describe('regression: v2.8 — command palette chat-aware', () => {
+  it('palette dispatches nohi:chat-action and has New Chat / Search Sessions', () => {
+    const src = readFileSync(join(ROOT, 'src/components/shell/command-palette.tsx'), 'utf-8')
+    expect(src).toMatch(/nohi:chat-action/)
+    expect(src).toMatch(/new-session/)
+    expect(src).toMatch(/focus-search/)
+    expect(src).toMatch(/toggle-sidebar/)
+  })
+
+  it('chat layout listens for nohi:chat-action', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/layout.tsx'), 'utf-8')
+    expect(src).toMatch(/nohi:chat-action/)
+  })
+})
+
+describe('regression: v2.8 — atomic session writes', () => {
+  it('sessions/history.ts uses a tmp + rename dance', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/sessions/history.ts'), 'utf-8')
+    expect(src).toMatch(/rename/)
+    expect(src).toMatch(/\.tmp\./)
+  })
+})
+
+describe('regression: v2.8 — tool-consent modal is Esc-dismissible', () => {
+  it('tool-consent passes onOpenChange that denies on close', () => {
+    const src = readFileSync(join(ROOT, 'src/components/chat/tool-consent.tsx'), 'utf-8')
+    expect(src).toMatch(/onOpenChange/)
+    expect(src).toMatch(/respond\(['"]deny['"]\)/)
+  })
+})
+
+describe('regression: v2.8 — attachment size + binary guard', () => {
+  it('chat/page.tsx enforces image/text caps + sniffs binaries', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/MAX_IMAGE_BYTES/)
+    expect(src).toMatch(/MAX_TEXT_BYTES/)
+    expect(src).toMatch(/looksBinary/)
+  })
+})
+
 // ─── v2.7.2: polish + doc drift ───────────────────────────────────────────
 
 describe('regression: v2.7.2 — small hardening + doc drift fixes', () => {

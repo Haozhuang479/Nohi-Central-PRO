@@ -8,7 +8,30 @@ import { SlashMenu } from '@/components/chat/slash-menu'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
 import { useAIStore } from '@/store/ai-store'
+import { useCostStore } from '@/store/cost-store'
+import { toast } from 'sonner'
 import { useChatOutletContext } from './layout'
+
+// Attachment size caps — images are IPC-base64'd and every large image
+// chokes the renderer → main bridge. Text files get blockquoted into the
+// prompt so they directly inflate token counts.
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+const MAX_TEXT_BYTES = 1 * 1024 * 1024
+
+/** Reject obvious binaries slipping through as "text/plain". A drop sniff on
+ *  the first 1 KB looking for either a NUL byte or a high ratio of
+ *  non-printable characters. */
+function looksBinary(sample: string): boolean {
+  if (sample.includes('\x00')) return true
+  let bad = 0
+  const n = Math.min(sample.length, 1024)
+  for (let i = 0; i < n; i++) {
+    const c = sample.charCodeAt(i)
+    // Printable ASCII + common whitespace. Unicode above 127 is allowed.
+    if (c < 9 || (c > 13 && c < 32)) bad++
+  }
+  return n > 0 && bad / n > 0.1
+}
 import {
   PROVIDER_LABELS,
   PROVIDER_MODELS,
@@ -134,6 +157,25 @@ export default function ChatPage({ settings }: Props) {
     setStreamingText('')
   }, [session, setIsRunning])
 
+  // Esc → abort the running agent. Skips when a modal is open (radix
+  // portals a `[role=dialog]` that the browser will have Esc-captured
+  // already via its own handler) or when the user is typing inside a
+  // contenteditable — we don't want to hijack Escape inside an input's
+  // own clear gesture.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'Escape') return
+      if (!isRunning) return
+      // If any radix dialog is open, let it handle Esc (tool-consent,
+      // delete-confirm, image lightbox all register their own).
+      if (document.querySelector('[role="dialog"][data-state="open"]')) return
+      e.preventDefault()
+      stopAgent()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [isRunning, stopAgent])
+
   // ── File attachment ───────────────────────────────────────────────────────
   const [attachedImages, setAttachedImages] = useState<Array<{ name: string; base64: string; mediaType: string }>>([])
   const [isDragging, setIsDragging] = useState(false)
@@ -164,8 +206,23 @@ export default function ChatPage({ settings }: Props) {
         for (const file of results) {
           const fileName = file.path.split('/').pop() ?? file.path
           if (file.isImage && file.base64 && file.mediaType) {
+            // base64 expands 3 bytes → 4 chars; approximate the original.
+            const bytes = Math.floor(file.base64.length * 0.75)
+            if (bytes > MAX_IMAGE_BYTES) {
+              toast.error(`${fileName}: image exceeds 5 MB limit`, { duration: 6000 })
+              continue
+            }
             setAttachedImages((prev) => [...prev, { name: fileName, base64: file.base64!, mediaType: file.mediaType! }])
           } else if (!file.isImage && file.content !== undefined) {
+            const bytes = new TextEncoder().encode(file.content).byteLength
+            if (bytes > MAX_TEXT_BYTES) {
+              toast.error(`${fileName}: text exceeds 1 MB limit`, { duration: 6000 })
+              continue
+            }
+            if (looksBinary(file.content)) {
+              toast.error(`${fileName}: looks like a binary file — skipped`, { duration: 6000 })
+              continue
+            }
             const block = `\n\n> **File: ${fileName}**\n>\n${file.content
               .split('\n')
               .map((l: string) => `> ${l}`)
@@ -222,6 +279,10 @@ export default function ChatPage({ settings }: Props) {
     for (const file of files) {
       const imageTypes = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
       if (imageTypes.includes(file.type)) {
+        if (file.size > MAX_IMAGE_BYTES) {
+          toast.error(`${file.name}: image exceeds 5 MB limit`, { duration: 6000 })
+          continue
+        }
         const reader = new FileReader()
         reader.onload = () => {
           if (typeof reader.result !== 'string') return
@@ -231,8 +292,15 @@ export default function ChatPage({ settings }: Props) {
         }
         reader.readAsDataURL(file)
       } else {
-        // Text / code file
+        if (file.size > MAX_TEXT_BYTES) {
+          toast.error(`${file.name}: text exceeds 1 MB limit`, { duration: 6000 })
+          continue
+        }
         const text = await file.text()
+        if (looksBinary(text)) {
+          toast.error(`${file.name}: looks like a binary file — skipped`, { duration: 6000 })
+          continue
+        }
         const block = `\n\n> **File: ${file.name}**\n>\n${text
           .split('\n')
           .map((l: string) => `> ${l}`)
@@ -429,6 +497,16 @@ export default function ChatPage({ settings }: Props) {
             }
           } else if (event.type === 'message_complete') {
             addTokens(event.usage.input_tokens, event.usage.output_tokens, provider)
+            // Also feed the cost-store — this is what Statusbar / Titlebar read
+            // for the "$X today" display. Without this call the UI reads $0
+            // forever (agent never touched this store prior to v2.8.0).
+            useCostStore.getState().addEntry({
+              label: session?.title ?? 'chat',
+              inputTokens: event.usage.input_tokens,
+              outputTokens: event.usage.output_tokens,
+              model,
+              provider,
+            })
           } else if (event.type === 'done' || event.type === 'error') {
             const finalContent =
               event.type === 'error' ? `Error: ${event.message}` : assistantText
