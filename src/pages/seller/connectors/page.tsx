@@ -8,6 +8,9 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
+import { toastIpcError } from '@/lib/ipc-toast'
+import { EmptyState } from '@/components/ui/empty-state'
+import { ListSkeleton } from '@/components/ui/list-skeleton'
 
 interface ConnectorMeta {
   id: 'shopify' | 'gdrive'
@@ -24,12 +27,15 @@ export default function ConnectorsPage() {
   const t = (en: string, zh: string) => (language === 'zh' ? zh : en)
 
   const [items, setItems] = useState<ConnectorMeta[]>([])
+  const [loading, setLoading] = useState(true)
   const [shopifyOpen, setShopifyOpen] = useState(false)
   const [gdriveOpen, setGdriveOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
 
   const refresh = useCallback(() => {
-    window.nohi?.connectors?.list().then(setItems).catch(() => {})
+    window.nohi?.connectors?.list()
+      .then((list) => { if (list) setItems(list); setLoading(false) })
+      .catch((err) => { toastIpcError('connectors:list')(err); setLoading(false) })
   }, [])
   useEffect(() => { refresh() }, [refresh])
 
@@ -56,7 +62,16 @@ export default function ConnectorsPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-8 py-6 space-y-4">
-        {items.map((c) => (
+        {loading ? (
+          <ListSkeleton rows={2} rowHeightClass="h-32" />
+        ) : items.length === 0 ? (
+          <EmptyState
+            title={t('No connectors yet', '还没有连接器')}
+            description={t('Connect Shopify or Google Drive to pull catalog data into Nohi.', '连接 Shopify 或 Google Drive,把目录数据拉进 Nohi。')}
+            ctaLabel={t('Connect Shopify', '连接 Shopify')}
+            onCta={() => setShopifyOpen(true)}
+          />
+        ) : items.map((c) => (
           <div
             key={c.id}
             className={cn(

@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
+import { toastIpcError } from '@/lib/ipc-toast'
 import { useChatOutletContext } from './layout'
 import type { Skill } from '../../../electron/main/engine/types'
 
@@ -29,7 +30,7 @@ export default function ChatSkillsPage() {
 
   useEffect(() => {
     if (window.nohi?.skills) {
-      window.nohi.skills.list().then(setSkills).catch(() => {})
+      window.nohi.skills.list().then(setSkills).catch(toastIpcError('skills:list'))
     }
   }, [])
 

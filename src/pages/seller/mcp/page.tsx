@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
+import { toastIpcError } from '@/lib/ipc-toast'
+import { EmptyState } from '@/components/ui/empty-state'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -32,19 +34,21 @@ export default function McpPage({ settings, onSave }: McpPageProps) {
   const [serverTools, setServerTools] = useState<Record<string, string[]>>({})
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  // Fetch connection statuses
+  // Fetch connection statuses — polled on every server-list change, so a
+  // transient failure is fine: the next write will re-fire this effect.
   useEffect(() => {
     if (window.nohi?.mcp) {
-      window.nohi.mcp.status().then(setStatuses).catch(() => {})
+      window.nohi.mcp.status().then(setStatuses).catch(() => { /* transient; retried on next change */ })
     }
   }, [servers])
 
-  // Fetch tools for expanded server
+  // Fetch tools for expanded server — user-initiated expansion, so surface
+  // the error if it fails.
   useEffect(() => {
     if (expandedId && window.nohi?.mcp && !serverTools[expandedId]) {
       window.nohi.mcp.tools(expandedId).then(tools => {
         setServerTools(prev => ({ ...prev, [expandedId]: tools }))
-      }).catch(() => {})
+      }).catch(toastIpcError('mcp:tools'))
     }
   }, [expandedId, serverTools])
 
@@ -94,7 +98,12 @@ export default function McpPage({ settings, onSave }: McpPageProps) {
   const reconnect = useCallback(async (id: string) => {
     if (window.nohi?.mcp) {
       toast.info(t('Reconnecting...', '重新连接中...'))
-      await window.nohi.mcp.reconnect(id).catch(() => {})
+      try {
+        await window.nohi.mcp.reconnect(id)
+      } catch (err) {
+        toastIpcError('mcp:reconnect')(err)
+        return
+      }
       const s = await window.nohi.mcp.status().catch(() => ({}))
       setStatuses(s as Record<string, string>)
     }
@@ -198,24 +207,15 @@ export default function McpPage({ settings, onSave }: McpPageProps) {
 
       {/* Server List */}
       {servers.length === 0 && !editing ? (
-        <div className="text-center py-16 rounded-2xl border border-dashed border-border">
-          <p className="text-sm text-muted-foreground mb-3">
-            {t('No MCP servers configured yet.', '尚未配置 MCP 服务器。')}
-          </p>
-          <p className="text-xs text-muted-foreground mb-4 max-w-md mx-auto">
-            {t(
-              'MCP (Model Context Protocol) servers let you connect external tools like GitHub, Shopify, databases, and more to the AI agent.',
-              'MCP（模型上下文协议）服务器让你将 GitHub、Shopify、数据库等外部工具连接到 AI 代理。'
-            )}
-          </p>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setEditing({ name: '', command: '', args: '', env: '', enabled: true })}
-          >
-            {t('Add your first server', '添加第一个服务器')}
-          </Button>
-        </div>
+        <EmptyState
+          title={t('No MCP servers configured yet.', '尚未配置 MCP 服务器。')}
+          description={t(
+            'MCP (Model Context Protocol) servers let you connect external tools like GitHub, Shopify, databases, and more to the AI agent.',
+            'MCP（模型上下文协议）服务器让你将 GitHub、Shopify、数据库等外部工具连接到 AI 代理。',
+          )}
+          ctaLabel={t('Add your first server', '添加第一个服务器')}
+          onCta={() => setEditing({ name: '', command: '', args: '', env: '', enabled: true })}
+        />
       ) : (
         <div className="flex flex-col gap-3">
           {servers.map(srv => {

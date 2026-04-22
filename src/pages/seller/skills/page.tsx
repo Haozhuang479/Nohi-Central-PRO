@@ -6,6 +6,9 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
+import { toastIpcError } from '@/lib/ipc-toast'
+import { EmptyState } from '@/components/ui/empty-state'
+import { ListSkeleton } from '@/components/ui/list-skeleton'
 import type { Skill } from '../../../../electron/main/engine/types'
 
 interface EditingSkill {
@@ -21,14 +24,23 @@ export default function SkillsPage() {
   const t = (en: string, zh: string) => language === 'zh' ? zh : en
 
   const [skills, setSkills] = useState<Skill[]>([])
+  const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<EditingSkill | null>(null)
   const [filter, setFilter] = useState<'all' | 'builtin' | 'custom'>('all')
   const [search, setSearch] = useState('')
 
   useEffect(() => {
     if (window.nohi?.skills) {
-      window.nohi.skills.list().then(setSkills).catch(() => {})
+      window.nohi.skills.list()
+        .then((list) => { setSkills(list); setLoading(false) })
+        .catch((err) => { toastIpcError('skills:list')(err); setLoading(false) })
+    } else {
+      setLoading(false)
     }
+  }, [])
+
+  const openCreate = useCallback(() => {
+    setEditing({ name: '', description: '', trigger: '', content: '' })
   }, [])
 
   const toggle = useCallback(async (id: string, enabled: boolean) => {
@@ -178,12 +190,22 @@ export default function SkillsPage() {
       )}
 
       {/* Skills Grid */}
-      {filtered.length === 0 ? (
-        <div className="text-center py-16">
-          <p className="text-sm text-muted-foreground">
-            {search ? t('No skills match your search.', '没有匹配的 Skill。') : t('No skills found.', '暂无 Skills。')}
-          </p>
-        </div>
+      {loading ? (
+        <ListSkeleton rows={4} rowHeightClass="h-28" />
+      ) : filtered.length === 0 ? (
+        search ? (
+          <EmptyState
+            title={t('No skills match your search.', '没有匹配的 Skill。')}
+            description={t('Try a different name or trigger keyword.', '换个名称或触发词试试。')}
+          />
+        ) : (
+          <EmptyState
+            title={t('No skills yet', '还没有 Skills')}
+            description={t('Create a skill to trigger custom prompts with a slash command.', '创建一个 Skill,用斜杠命令触发自定义提示词。')}
+            ctaLabel={t('Create your first skill', '创建第一个 Skill')}
+            onCta={openCreate}
+          />
+        )
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {filtered.map(skill => (

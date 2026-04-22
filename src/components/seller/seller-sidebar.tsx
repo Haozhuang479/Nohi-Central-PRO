@@ -44,7 +44,9 @@ export function SellerSidebar() {
 
   const ownSupplyItems = [
     { title: t('nav.csvUpload'), href: '/seller/catalog/own-supply' },
-    { title: t('nav.connectors'), href: '/seller/catalog/connectors' },
+    // The dead /seller/catalog/connectors page was removed in v2.8.3; the
+    // real connector UI lives at /seller/connectors.
+    { title: t('nav.connectors'), href: '/seller/connectors' },
   ]
 
   const nohiDatabaseItems = [

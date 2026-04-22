@@ -1,6 +1,7 @@
 // Shared hook for automation state + IPC — used by both /seller/automation and /chat/automation
 import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
+import { toastIpcError } from './ipc-toast'
 import type { Automation } from '../../electron/main/engine/automation/store'
 
 export type Schedule = Automation['schedule']
@@ -24,10 +25,10 @@ export function useAutomations(language: 'en' | 'zh') {
 
   useEffect(() => {
     if (window.nohi?.automation) {
-      window.nohi.automation.list().then(setAutomations).catch(() => {})
+      window.nohi.automation.list().then(setAutomations).catch(toastIpcError('automation:list'))
     }
     const unsub = window.nohi?.automation?.onCompleted(() => {
-      window.nohi?.automation?.list().then(setAutomations).catch(() => {})
+      window.nohi?.automation?.list().then(setAutomations).catch(toastIpcError('automation:list'))
     })
     return () => { unsub?.() }
   }, [])
@@ -91,7 +92,7 @@ export function useAutomations(language: 'en' | 'zh') {
       toast.error(result.error)
     } else {
       toast.success(t('Run complete — opened in chat history', '运行完成 — 已加入聊天历史'))
-      window.nohi?.automation?.list().then(setAutomations).catch(() => {})
+      window.nohi?.automation?.list().then(setAutomations).catch(toastIpcError('automation:list'))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

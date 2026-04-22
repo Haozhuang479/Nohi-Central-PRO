@@ -6,6 +6,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { CrashWatcher } from '@/components/crash-watcher'
 import { ToolConsent } from '@/components/chat/tool-consent'
+import { toastIpcError } from '@/lib/ipc-toast'
 import { toast } from 'sonner'
 import type { NohiSettings } from '../electron/main/engine/types'
 
@@ -37,7 +38,6 @@ const ConnectorsTopPage = lazy(() => import('@/pages/seller/connectors/page'))
 
 // Catalog
 const OwnSupplyPage = lazy(() => import('@/pages/seller/catalog/own-supply/page'))
-const ConnectorsPage = lazy(() => import('@/pages/seller/catalog/connectors/page'))
 const NohiProductsPage = lazy(
   () => import('@/pages/seller/catalog/nohi-database/products/page')
 )
@@ -115,7 +115,7 @@ export default function App() {
           )
           const { migratedPlaintextKeys: _drop, ...rest } = s
           void _drop
-          window.nohi.settings.save(rest).catch(() => {})
+          window.nohi.settings.save(rest).catch(toastIpcError('settings:save'))
         }
       })
       .catch((err: unknown) => {
@@ -199,9 +199,12 @@ export default function App() {
                   path="catalog/own-supply"
                   element={<OwnSupplyPage />}
                 />
+                {/* v2.8.3: the old /seller/catalog/connectors page was a
+                    dead visual duplicate of /seller/connectors with zero
+                    IPC wiring. Redirect so old bookmarks/links still work. */}
                 <Route
                   path="catalog/connectors"
-                  element={<ConnectorsPage />}
+                  element={<Navigate to="/seller/connectors" replace />}
                 />
                 <Route
                   path="catalog/nohi-database/products"

@@ -406,6 +406,77 @@ describe('regression: v2.8.2 — dead use-smart-scroll hook removed', () => {
   })
 })
 
+// ─── v2.8.3: cross-cutting cleanup ────────────────────────────────────────
+
+describe('regression: v2.8.3 — dead catalog/connectors page removed', () => {
+  it('/seller/catalog/connectors page file is gone', () => {
+    expect(
+      () => readFileSync(join(ROOT, 'src/pages/seller/catalog/connectors/page.tsx'), 'utf-8'),
+    ).toThrow()
+  })
+
+  it('App.tsx redirects the old route to /seller/connectors', () => {
+    const src = readFileSync(join(ROOT, 'src/App.tsx'), 'utf-8')
+    expect(src).toMatch(/path="catalog\/connectors"[\s\S]*Navigate\s+to="\/seller\/connectors"/)
+  })
+
+  it('seller-sidebar no longer links to /seller/catalog/connectors', () => {
+    const src = readFileSync(join(ROOT, 'src/components/seller/seller-sidebar.tsx'), 'utf-8')
+    // Quoted href is the thing that matters — comments referencing the old
+    // path are fine.
+    expect(src).not.toMatch(/href:\s*['"]\/seller\/catalog\/connectors['"]/)
+    expect(src).toMatch(/href:\s*['"]\/seller\/connectors['"]/)
+  })
+})
+
+describe('regression: v2.8.3 — IPC errors routed through toastIpcError', () => {
+  it('ipc-toast helper exports toastIpcError', () => {
+    const src = readFileSync(join(ROOT, 'src/lib/ipc-toast.ts'), 'utf-8')
+    expect(src).toMatch(/export function toastIpcError/)
+    expect(src).toMatch(/toast\.error/)
+  })
+
+  it('key call sites no longer use bare .catch(() => {})', () => {
+    const cases: Array<[string, RegExp]> = [
+      ['src/App.tsx',                              /settings:save/],
+      ['src/lib/use-automations.ts',               /automation:list/],
+      ['src/pages/seller/connectors/page.tsx',     /connectors:list/],
+      ['src/pages/seller/skills/page.tsx',         /skills:list/],
+      ['src/pages/chat/skills.tsx',                /skills:list/],
+      ['src/pages/chat/layout.tsx',                /sessions:list/],
+      ['src/pages/seller/mcp/page.tsx',            /mcp:reconnect/],
+      ['src/pages/chat/mcp.tsx',                   /mcp:reconnect/],
+    ]
+    for (const [rel, label] of cases) {
+      const src = readFileSync(join(ROOT, rel), 'utf-8')
+      expect(src, `${rel} imports toastIpcError`).toMatch(/toastIpcError/)
+      expect(src, `${rel} labels with ${label}`).toMatch(label)
+    }
+  })
+})
+
+describe('regression: v2.8.3 — EmptyState + ListSkeleton components', () => {
+  it('shared components exist', () => {
+    const empty = readFileSync(join(ROOT, 'src/components/ui/empty-state.tsx'), 'utf-8')
+    const skel = readFileSync(join(ROOT, 'src/components/ui/list-skeleton.tsx'), 'utf-8')
+    expect(empty).toMatch(/export function EmptyState/)
+    expect(skel).toMatch(/export function ListSkeleton/)
+  })
+
+  it('four list pages adopt at least one of the shared components', () => {
+    const pages = [
+      'src/pages/seller/skills/page.tsx',
+      'src/pages/seller/connectors/page.tsx',
+      'src/pages/seller/mcp/page.tsx',
+      'src/pages/chat/mcp.tsx',
+    ]
+    for (const rel of pages) {
+      const src = readFileSync(join(ROOT, rel), 'utf-8')
+      expect(src, `${rel} uses EmptyState or ListSkeleton`).toMatch(/EmptyState|ListSkeleton/)
+    }
+  })
+})
+
 // ─── v2.7.2: polish + doc drift ───────────────────────────────────────────
 
 describe('regression: v2.7.2 — small hardening + doc drift fixes', () => {

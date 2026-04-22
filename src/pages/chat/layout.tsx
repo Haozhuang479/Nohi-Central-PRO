@@ -18,6 +18,7 @@ import { useAIStore } from '@/store/ai-store'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
 import { CHAT_SIDEBAR_NAV, labelFor } from '@/lib/chat-nav'
+import { toastIpcError } from '@/lib/ipc-toast'
 import type { NohiSettings, Session } from '../../../electron/main/engine/types'
 
 interface ChatLayoutProps {
@@ -84,7 +85,7 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
             setSession(list[0])
           }
         })
-        .catch(() => {})
+        .catch(toastIpcError('sessions:list'))
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

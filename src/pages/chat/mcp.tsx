@@ -6,6 +6,8 @@ import { Switch } from '@/components/ui/switch'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
+import { toastIpcError } from '@/lib/ipc-toast'
+import { EmptyState } from '@/components/ui/empty-state'
 import { useChatOutletContext } from './layout'
 import type { NohiSettings, McpServerConfig } from '../../../electron/main/engine/types'
 
@@ -35,12 +37,15 @@ export default function ChatMcpPage({ settings, onSave }: McpPageProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   useEffect(() => {
-    if (window.nohi?.mcp) window.nohi.mcp.status().then(setStatuses).catch(() => {})
+    // Transient; retried on next servers change. Keep silent.
+    if (window.nohi?.mcp) window.nohi.mcp.status().then(setStatuses).catch(() => { /* retried */ })
   }, [servers])
 
   useEffect(() => {
     if (expandedId && window.nohi?.mcp && !serverTools[expandedId]) {
-      window.nohi.mcp.tools(expandedId).then(tools => setServerTools(prev => ({ ...prev, [expandedId]: tools }))).catch(() => {})
+      window.nohi.mcp.tools(expandedId)
+        .then(tools => setServerTools(prev => ({ ...prev, [expandedId]: tools })))
+        .catch(toastIpcError('mcp:tools'))
     }
   }, [expandedId, serverTools])
 
@@ -78,7 +83,12 @@ export default function ChatMcpPage({ settings, onSave }: McpPageProps) {
 
   const reconnect = useCallback(async (id: string) => {
     if (window.nohi?.mcp) {
-      await window.nohi.mcp.reconnect(id).catch(() => {})
+      try {
+        await window.nohi.mcp.reconnect(id)
+      } catch (err) {
+        toastIpcError('mcp:reconnect')(err)
+        return
+      }
       setStatuses(await window.nohi.mcp.status().catch(() => ({})) as Record<string, string>)
     }
   }, [])
@@ -132,15 +142,12 @@ export default function ChatMcpPage({ settings, onSave }: McpPageProps) {
 
         {/* Server list */}
         {servers.length === 0 && !editing ? (
-          <div className="text-center py-16">
-            <p className="text-sm text-muted-foreground mb-2">{t('No MCP servers yet.', '尚未配置 MCP 服务器。')}</p>
-            <p className="text-xs text-muted-foreground mb-4 max-w-sm mx-auto">
-              {t('Connect external tools like GitHub, Shopify, or databases to the AI agent.', '将 GitHub、Shopify、数据库等外部工具连接到 AI 代理。')}
-            </p>
-            <Button size="sm" variant="outline" className="text-xs" onClick={() => setEditing({ name: '', command: '', args: '', env: '', enabled: true })}>
-              {t('Add your first server', '添加第一个服务器')}
-            </Button>
-          </div>
+          <EmptyState
+            title={t('No MCP servers yet.', '尚未配置 MCP 服务器。')}
+            description={t('Connect external tools like GitHub, Shopify, or databases to the AI agent.', '将 GitHub、Shopify、数据库等外部工具连接到 AI 代理。')}
+            ctaLabel={t('Add your first server', '添加第一个服务器')}
+            onCta={() => setEditing({ name: '', command: '', args: '', env: '', enabled: true })}
+          />
         ) : (
           <div className="flex flex-col gap-2">
             {servers.map(srv => {

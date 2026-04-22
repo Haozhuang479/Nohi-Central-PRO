@@ -6,6 +6,7 @@ import { ToolBlock, type ToolBlockState } from '@/components/chat/tool-block'
 import { MessageView, StreamingMessageView } from '@/components/chat/message-view'
 import { SlashMenu, type BuiltinCommand } from '@/components/chat/slash-menu'
 import { CHAT_ADD_MENU_LINKS, labelFor } from '@/lib/chat-nav'
+import { toastIpcError } from '@/lib/ipc-toast'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
 import { useAIStore } from '@/store/ai-store'
@@ -141,7 +142,7 @@ export default function ChatPage({ settings }: Props) {
       window.nohi.skills
         .list()
         .then((list: Skill[]) => setSkills(list))
-        .catch(() => {})
+        .catch(toastIpcError('skills:list'))
     }
   }, [])
 
@@ -247,7 +248,7 @@ export default function ChatPage({ settings }: Props) {
           // Write back to session and persist
           const updated = { ...session, workingDir: dir }
           setSession(updated)
-          window.nohi.sessions.save(updated).catch(() => {})
+          window.nohi.sessions.save(updated).catch(toastIpcError('sessions:save'))
         }
       } catch {
         // cancelled
@@ -369,7 +370,7 @@ export default function ChatPage({ settings }: Props) {
         setSession(cleared)
         setSessions((prev) => prev.map((s) => (s.id === cleared.id ? { ...cleared, messages: [] } : s)))
         if (typeof window !== 'undefined' && window.nohi?.sessions) {
-          window.nohi.sessions.save(cleared).catch(() => {})
+          window.nohi.sessions.save(cleared).catch(toastIpcError('sessions:save'))
         }
         setStreamingText('')
         setThinkingText('')
@@ -415,7 +416,7 @@ export default function ChatPage({ settings }: Props) {
           const updated: Session = { ...session, messages: [...session.messages, helpMsg], updatedAt: Date.now() }
           setSession(updated)
           if (typeof window !== 'undefined' && window.nohi?.sessions) {
-            window.nohi.sessions.save(updated).catch(() => {})
+            window.nohi.sessions.save(updated).catch(toastIpcError('sessions:save'))
           }
         }
         break
@@ -511,7 +512,7 @@ export default function ChatPage({ settings }: Props) {
 
       // Persist user message immediately so it's not lost if agent fails
       if (typeof window !== 'undefined' && window.nohi?.sessions) {
-        window.nohi.sessions.save(updatedSession).catch(() => {})
+        window.nohi.sessions.save(updatedSession).catch(toastIpcError('sessions:save'))
       }
 
       // Sync sidebar list: insert if new, update title if existing
@@ -625,7 +626,7 @@ export default function ChatPage({ settings }: Props) {
               }
               // Persist the full session (including assistant response) to disk
               if (typeof window !== 'undefined' && window.nohi?.sessions) {
-                window.nohi.sessions.save(saved).catch(() => {})
+                window.nohi.sessions.save(saved).catch(toastIpcError('sessions:save'))
               }
               // Bubble updated timestamp to sidebar so list reorders
               setSessions((prevList: Session[]) => {
@@ -834,7 +835,7 @@ export default function ChatPage({ settings }: Props) {
                         if (session) {
                           const updated = { ...session, model: newModel }
                           setSession(updated)
-                          window.nohi?.sessions?.save(updated).catch(() => {})
+                          window.nohi?.sessions?.save(updated).catch(toastIpcError('sessions:save'))
                         }
                         setShowProviderMenu(false)
                       }}
@@ -887,7 +888,7 @@ export default function ChatPage({ settings }: Props) {
                     if (session) {
                       const updated = { ...session, model: m }
                       setSession(updated)
-                      window.nohi?.sessions?.save(updated).catch(() => {})
+                      window.nohi?.sessions?.save(updated).catch(toastIpcError('sessions:save'))
                     }
                     setShowModelMenu(false)
                   }}
@@ -915,7 +916,7 @@ export default function ChatPage({ settings }: Props) {
             if (!session) return
             const updated = { ...session, planMode: !session.planMode }
             setSession(updated)
-            window.nohi.sessions.save(updated).catch(() => {})
+            window.nohi.sessions.save(updated).catch(toastIpcError('sessions:save'))
           }}
           title={language === 'zh' ? '计划模式：先规划再执行' : 'Plan Mode: plan before executing'}
           className={cn(
