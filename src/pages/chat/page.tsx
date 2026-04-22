@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import nohiLogo from '@/assets/nohi-logo.svg'
 import { useVoiceRecorder } from '@/lib/use-voice-recorder'
 import { ImageLightbox } from '@/components/chat/image-lightbox'
 import { ToolBlock, type ToolBlockState } from '@/components/chat/tool-block'
 import { MessageView, StreamingMessageView } from '@/components/chat/message-view'
-import { SlashMenu } from '@/components/chat/slash-menu'
+import { SlashMenu, type BuiltinCommand } from '@/components/chat/slash-menu'
+import { CHAT_ADD_MENU_LINKS, labelFor } from '@/lib/chat-nav'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
 import { useAIStore } from '@/store/ai-store'
@@ -337,6 +338,100 @@ export default function ChatPage({ settings }: Props) {
     setShowSlashMenu(false)
     textareaRef.current?.focus()
   }, [input])
+
+  // Built-in slash commands. Each runs an action instead of injecting text;
+  // the trailing "/foo" is stripped from the input so the user isn't left
+  // with a half-typed command.
+  const BUILTIN_COMMANDS: BuiltinCommand[] = useMemo(() => {
+    if (language === 'zh') {
+      return [
+        { id: 'clear', name: 'clear', description: '清空当前对话消息' },
+        { id: 'new',   name: 'new',   description: '新建一个空对话' },
+        { id: 'help',  name: 'help',  description: '显示键盘快捷键和命令' },
+        { id: 'model', name: 'model', description: '切换模型: /model <名称>' },
+      ]
+    }
+    return [
+      { id: 'clear', name: 'clear', description: 'Clear messages in this chat' },
+      { id: 'new',   name: 'new',   description: 'Start a fresh chat' },
+      { id: 'help',  name: 'help',  description: 'Show keyboard shortcuts + commands' },
+      { id: 'model', name: 'model', description: 'Switch model: /model <name>' },
+    ]
+  }, [language])
+
+  const handleBuiltinSelect = useCallback((cmd: BuiltinCommand) => {
+    setInput((prev) => prev.replace(/(?:^|\s)\/\w*$/, (m) => (m.startsWith('/') ? '' : m[0])))
+    setShowSlashMenu(false)
+    switch (cmd.id) {
+      case 'clear': {
+        if (!session) return
+        const cleared: Session = { ...session, messages: [], updatedAt: Date.now() }
+        setSession(cleared)
+        setSessions((prev) => prev.map((s) => (s.id === cleared.id ? { ...cleared, messages: [] } : s)))
+        if (typeof window !== 'undefined' && window.nohi?.sessions) {
+          window.nohi.sessions.save(cleared).catch(() => {})
+        }
+        setStreamingText('')
+        setThinkingText('')
+        break
+      }
+      case 'new': {
+        window.dispatchEvent(new CustomEvent('nohi:chat-action', { detail: 'new-session' }))
+        break
+      }
+      case 'help': {
+        const body = language === 'zh'
+          ? `**可用的内置斜杠命令**
+
+- \`/clear\` — 清空当前对话（消息仍保留磁盘历史直到下次保存）
+- \`/new\` — 新建一个空对话
+- \`/help\` — 显示本帮助
+- \`/model <名称>\` — 切换模型，例如 \`/model claude-opus-4-6\`
+
+**键盘快捷键**
+
+- **Esc** — 中断正在运行的智能体
+- **⌘K** — 打开命令面板（新建对话、切换侧栏、搜索对话）
+- **Enter** — 发送； **Shift+Enter** — 换行`
+          : `**Built-in slash commands**
+
+- \`/clear\` — clear the current conversation
+- \`/new\` — start a fresh chat
+- \`/help\` — show this help message
+- \`/model <name>\` — switch model, e.g. \`/model claude-opus-4-6\`
+
+**Keyboard shortcuts**
+
+- **Esc** — abort a running agent
+- **⌘K** — open command palette
+- **Enter** to send · **Shift+Enter** for newline`
+        const helpMsg = {
+          id: crypto.randomUUID(),
+          role: 'assistant' as const,
+          content: body,
+          timestamp: Date.now(),
+        }
+        if (session) {
+          const updated: Session = { ...session, messages: [...session.messages, helpMsg], updatedAt: Date.now() }
+          setSession(updated)
+          if (typeof window !== 'undefined' && window.nohi?.sessions) {
+            window.nohi.sessions.save(updated).catch(() => {})
+          }
+        }
+        break
+      }
+      case 'model': {
+        // `/model <name>` — any text after the slash term becomes the model
+        // name. If they just typed `/model`, prompt via command palette.
+        const match = input.match(/\/model\s+(\S+)/)
+        if (match) {
+          setModel(match[1])
+        }
+        break
+      }
+    }
+    textareaRef.current?.focus()
+  }, [input, language, session, setSession, setSessions, setModel])
 
   // ── Edit message ──────────────────────────────────────────────────────────
   const handleEditMessage = useCallback((text: string, msgId: string) => {
@@ -978,11 +1073,13 @@ export default function ChatPage({ settings }: Props) {
       <div className="px-4 pb-5 pt-2">
         <div className="relative rounded-2xl bg-background overflow-visible">
           {/* Slash command autocomplete */}
-          {showSlashMenu && skills.length > 0 && (
+          {showSlashMenu && (
             <SlashMenu
               skills={skills}
+              builtins={BUILTIN_COMMANDS}
               query={slashQuery}
               onSelect={handleSkillSelect}
+              onBuiltinSelect={handleBuiltinSelect}
               onClose={() => setShowSlashMenu(false)}
             />
           )}
@@ -1053,22 +1150,18 @@ export default function ChatPage({ settings }: Props) {
                     >
                       <span>{language === 'zh' ? '设置工作目录' : 'Set working dir'}</span>
                     </button>
-                    {/* Connectors */}
-                    <button
-                      type="button"
-                      onClick={() => { setShowAddMenu(false); window.location.hash = '/seller/catalog/connectors' }}
-                      className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-foreground hover:bg-muted transition-colors"
-                    >
-                      <span>{language === 'zh' ? '连接器' : 'Connectors'}</span>
-                    </button>
-                    {/* Skills */}
-                    <button
-                      type="button"
-                      onClick={() => { setShowAddMenu(false); window.location.hash = '/seller/settings' }}
-                      className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-foreground hover:bg-muted transition-colors"
-                    >
-                      <span>{language === 'zh' ? '技能' : 'Skills'}</span>
-                    </button>
+                    {/* Nav links — single-source via @/lib/chat-nav so these
+                        always agree with the sidebar quick-nav in layout.tsx. */}
+                    {CHAT_ADD_MENU_LINKS.map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        onClick={() => { setShowAddMenu(false); window.location.hash = entry.href }}
+                        className="flex items-center gap-2.5 w-full px-3 py-2 text-xs text-foreground hover:bg-muted transition-colors"
+                      >
+                        <span>{labelFor(entry, language)}</span>
+                      </button>
+                    ))}
                   </div>
                 )}
               </div>

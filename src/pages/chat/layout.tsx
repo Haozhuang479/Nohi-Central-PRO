@@ -17,6 +17,7 @@ import {
 import { useAIStore } from '@/store/ai-store'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
+import { CHAT_SIDEBAR_NAV, labelFor } from '@/lib/chat-nav'
 import type { NohiSettings, Session } from '../../../electron/main/engine/types'
 
 interface ChatLayoutProps {
@@ -386,22 +387,16 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
             </div>
           </div>
 
-          {/* Quick nav: Automation / Connectors / MCPs / Skills */}
+          {/* Quick nav — entries come from @/lib/chat-nav so the composer
+              "+ Add" menu and this sidebar never drift out of sync. */}
           <div className="px-3 pb-1 shrink-0">
-            {(
-              [
-                { label: language === 'zh' ? '自动化' : 'Automation', to: '/chat/automation' },
-                { label: language === 'zh' ? '连接器' : 'Connectors', to: '/seller/connectors' },
-                { label: 'MCPs', to: '/chat/mcp' },
-                { label: language === 'zh' ? '技能' : 'Skills', to: '/chat/skills' },
-              ] as const
-            ).map(({ label, to }) => (
+            {CHAT_SIDEBAR_NAV.map((entry) => (
               <Link
-                key={label}
-                to={to}
+                key={entry.id}
+                to={entry.href}
                 className="flex items-center w-full px-3 py-1.5 rounded-lg text-xs text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
               >
-                <span>{label}</span>
+                <span>{labelFor(entry, language)}</span>
               </Link>
             ))}
           </div>

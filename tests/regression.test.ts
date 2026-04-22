@@ -357,6 +357,55 @@ describe('regression: v2.8.1 — markdown export keeps images + tool blocks', ()
   })
 })
 
+// ─── v2.8.2: keyboard + slash builtins + nav consistency ─────────────────
+
+describe('regression: v2.8.2 — slash menu has built-in commands', () => {
+  it('SlashMenu surfaces builtins distinct from skills', () => {
+    const src = readFileSync(join(ROOT, 'src/components/chat/slash-menu.tsx'), 'utf-8')
+    expect(src).toMatch(/BuiltinCommand/)
+    expect(src).toMatch(/onBuiltinSelect/)
+    expect(src).toMatch(/built-in/)
+  })
+
+  it('chat/page.tsx wires /clear /new /help /model handlers', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/BUILTIN_COMMANDS/)
+    expect(src).toMatch(/handleBuiltinSelect/)
+    for (const id of ['clear', 'new', 'help', 'model']) {
+      expect(src, `case '${id}' handled`).toMatch(new RegExp(`case\\s+['"]${id}['"]`))
+    }
+  })
+})
+
+describe('regression: v2.8.2 — chat nav single-source', () => {
+  it('chat-nav module exports the two link arrays', () => {
+    const src = readFileSync(join(ROOT, 'src/lib/chat-nav.ts'), 'utf-8')
+    expect(src).toMatch(/export const CHAT_SIDEBAR_NAV/)
+    expect(src).toMatch(/export const CHAT_ADD_MENU_LINKS/)
+  })
+
+  it('sidebar and + Add menu both import from @/lib/chat-nav', () => {
+    for (const rel of ['src/pages/chat/layout.tsx', 'src/pages/chat/page.tsx']) {
+      const src = readFileSync(join(ROOT, rel), 'utf-8')
+      expect(src, `${rel} imports chat-nav`).toMatch(/from\s+['"]@\/lib\/chat-nav['"]/)
+    }
+  })
+
+  it('chat/page.tsx no longer hard-codes /seller/catalog/connectors', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).not.toMatch(/window\.location\.hash\s*=\s*['"]\/seller\/catalog\/connectors/)
+    expect(src).not.toMatch(/window\.location\.hash\s*=\s*['"]\/seller\/settings['"]/)
+  })
+})
+
+describe('regression: v2.8.2 — dead use-smart-scroll hook removed', () => {
+  it('src/lib/use-smart-scroll.ts no longer exists', () => {
+    expect(
+      () => readFileSync(join(ROOT, 'src/lib/use-smart-scroll.ts'), 'utf-8'),
+    ).toThrow()
+  })
+})
+
 // ─── v2.7.2: polish + doc drift ───────────────────────────────────────────
 
 describe('regression: v2.7.2 — small hardening + doc drift fixes', () => {
