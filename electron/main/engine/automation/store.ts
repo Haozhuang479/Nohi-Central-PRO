@@ -6,6 +6,7 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import { v4 as uuidv4 } from 'uuid'
+import { nextCronRun, parseCron } from './cron'
 
 const AUTOMATION_DIR = join(homedir(), '.nohi', 'automation')
 const AUTOMATION_FILE = join(AUTOMATION_DIR, 'automations.json')
@@ -17,12 +18,15 @@ export interface Automation {
   name: string
   description?: string
   prompt: string
-  // Recurrence: 'manual' (run on demand only), 'hourly', 'daily', 'weekly'
-  schedule: 'manual' | 'hourly' | 'daily' | 'weekly'
+  // Recurrence: 'manual' (run on demand only), preset windows, or 'cron'
+  // for a 5-field cron expression in cronExpression.
+  schedule: 'manual' | 'hourly' | 'daily' | 'weekly' | 'cron'
   // For daily/weekly: time of day in HH:mm (24h) — local time
   timeOfDay?: string
   // For weekly: 0=Sun..6=Sat
   dayOfWeek?: number
+  // For schedule='cron': full 5-field cron expression ("m h dom mon dow").
+  cronExpression?: string
   status: AutomationStatus
   createdAt: number
   updatedAt: number
@@ -66,7 +70,7 @@ export async function createAutomation(
     createdAt: now,
     updatedAt: now,
     status: 'active',
-    nextRunAt: computeNextRun(data.schedule, data.timeOfDay, data.dayOfWeek),
+    nextRunAt: computeNextRun(data.schedule, data.timeOfDay, data.dayOfWeek, data.cronExpression),
   }
   list.unshift(automation)
   await saveAll(list)
@@ -81,8 +85,13 @@ export async function updateAutomation(
   const idx = list.findIndex((a) => a.id === id)
   if (idx === -1) return list
   const merged = { ...list[idx], ...patch, id, updatedAt: Date.now() }
-  if (patch.schedule || patch.timeOfDay !== undefined || patch.dayOfWeek !== undefined) {
-    merged.nextRunAt = computeNextRun(merged.schedule, merged.timeOfDay, merged.dayOfWeek)
+  if (
+    patch.schedule ||
+    patch.timeOfDay !== undefined ||
+    patch.dayOfWeek !== undefined ||
+    patch.cronExpression !== undefined
+  ) {
+    merged.nextRunAt = computeNextRun(merged.schedule, merged.timeOfDay, merged.dayOfWeek, merged.cronExpression)
   }
   list[idx] = merged
   await saveAll(list)
@@ -111,6 +120,7 @@ export async function recordRun(
     list[idx].schedule,
     list[idx].timeOfDay,
     list[idx].dayOfWeek,
+    list[idx].cronExpression,
   )
   await saveAll(list)
 }
@@ -121,9 +131,22 @@ function computeNextRun(
   schedule: Automation['schedule'],
   timeOfDay?: string,
   dayOfWeek?: number,
+  cronExpression?: string,
 ): number | undefined {
   if (schedule === 'manual') return undefined
   const now = new Date()
+
+  if (schedule === 'cron') {
+    if (!cronExpression) return undefined
+    try {
+      const spec = parseCron(cronExpression)
+      return nextCronRun(spec, now)
+    } catch {
+      // Invalid cron strings leave nextRunAt undefined so the scheduler
+      // skips this automation until the user fixes the expression.
+      return undefined
+    }
+  }
 
   if (schedule === 'hourly') {
     const next = new Date(now)

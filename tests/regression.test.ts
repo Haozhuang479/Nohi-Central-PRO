@@ -455,6 +455,36 @@ describe('regression: v2.8.3 — IPC errors routed through toastIpcError', () =>
   })
 })
 
+// ─── v2.9.0: automation cron support ─────────────────────────────────────
+
+describe('regression: v2.9 — automation accepts cron schedule', () => {
+  it('schedule union + cronExpression field exist in store', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/automation/store.ts'), 'utf-8')
+    expect(src).toMatch(/schedule:\s*'manual'\s*\|\s*'hourly'\s*\|\s*'daily'\s*\|\s*'weekly'\s*\|\s*'cron'/)
+    expect(src).toMatch(/cronExpression\?:\s*string/)
+    expect(src).toMatch(/nextCronRun/)
+  })
+
+  it('AutomationCreateSchema validates cronExpression shape', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/ipc-schemas.ts'), 'utf-8')
+    expect(src).toMatch(/'manual',\s*'hourly',\s*'daily',\s*'weekly',\s*'cron'/)
+    expect(src).toMatch(/cronExpression/)
+    expect(src).toMatch(/5 space-separated fields/)
+  })
+
+  it('UI ships a CronField with live preview', () => {
+    const src = readFileSync(join(ROOT, 'src/components/automation/automation-body.tsx'), 'utf-8')
+    expect(src).toMatch(/CronField/)
+    expect(src).toMatch(/cronError/)
+    expect(src).toMatch(/describeCron/)
+  })
+
+  it('use-automations save blocks missing cronExpression', () => {
+    const src = readFileSync(join(ROOT, 'src/lib/use-automations.ts'), 'utf-8')
+    expect(src).toMatch(/Cron expression is required/)
+  })
+})
+
 describe('regression: v2.8.3 — EmptyState + ListSkeleton components', () => {
   it('shared components exist', () => {
     const empty = readFileSync(join(ROOT, 'src/components/ui/empty-state.tsx'), 'utf-8')

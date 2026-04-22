@@ -14,6 +14,8 @@ export interface EditingAutomation {
   schedule: Schedule
   timeOfDay: string
   dayOfWeek: number
+  /** 5-field cron expression, only used when schedule === 'cron'. */
+  cronExpression?: string
 }
 
 export function useAutomations(language: 'en' | 'zh') {
@@ -39,25 +41,27 @@ export function useAutomations(language: 'en' | 'zh') {
       toast.error(t('Name and prompt are required', '名称和提示词必填'))
       return
     }
+    if (editing.schedule === 'cron' && !editing.cronExpression?.trim()) {
+      toast.error(t('Cron expression is required', 'Cron 表达式必填'))
+      return
+    }
+    // Build the payload so we don't send stale timeOfDay / dayOfWeek fields
+    // when the user picked 'cron' mode — the backend schema still accepts
+    // them, but recomputation of nextRunAt triggers on any of them.
+    const payload = {
+      name: editing.name,
+      description: editing.description,
+      prompt: editing.prompt,
+      schedule: editing.schedule,
+      timeOfDay: editing.timeOfDay,
+      dayOfWeek: editing.dayOfWeek,
+      cronExpression: editing.schedule === 'cron' ? editing.cronExpression : undefined,
+    }
     if (editing.id) {
-      const next = await window.nohi.automation.update(editing.id, {
-        name: editing.name,
-        description: editing.description,
-        prompt: editing.prompt,
-        schedule: editing.schedule,
-        timeOfDay: editing.timeOfDay,
-        dayOfWeek: editing.dayOfWeek,
-      })
+      const next = await window.nohi.automation.update(editing.id, payload)
       setAutomations(next)
     } else {
-      const next = await window.nohi.automation.create({
-        name: editing.name,
-        description: editing.description,
-        prompt: editing.prompt,
-        schedule: editing.schedule,
-        timeOfDay: editing.timeOfDay,
-        dayOfWeek: editing.dayOfWeek,
-      })
+      const next = await window.nohi.automation.create(payload)
       setAutomations(next)
     }
     setEditing(null)

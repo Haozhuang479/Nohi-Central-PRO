@@ -105,9 +105,15 @@ export const AutomationCreateSchema = z.object({
   name: z.string().min(1).max(200),
   description: z.string().max(500).optional(),
   prompt: z.string().min(1).max(20_000),
-  schedule: z.enum(['manual', 'hourly', 'daily', 'weekly']),
+  schedule: z.enum(['manual', 'hourly', 'daily', 'weekly', 'cron']),
   timeOfDay: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'timeOfDay must be HH:mm in 24-hour format').optional(),
   dayOfWeek: z.number().int().min(0).max(6).optional(),
+  // Must have exactly 5 whitespace-separated fields. Deeper bounds
+  // checking happens at parseCron() in the scheduler.
+  cronExpression: z.string()
+    .regex(/^(\S+\s+){4}\S+$/, 'cronExpression must be 5 space-separated fields')
+    .max(200)
+    .optional(),
   model: z.string().max(100).optional(),
 })
 

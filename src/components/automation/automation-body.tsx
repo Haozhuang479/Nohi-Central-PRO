@@ -14,12 +14,14 @@ import {
 } from '@/components/ui/select'
 import type { useAutomations, Schedule, EditingAutomation } from '@/lib/use-automations'
 import type { Automation } from '../../../electron/main/engine/automation/store'
+import { cronError, describeCron } from '../../../electron/main/engine/automation/cron'
 
 const SCHEDULE_LABELS: Record<Schedule, { en: string; zh: string }> = {
   manual: { en: 'Manual only', zh: '仅手动' },
   hourly: { en: 'Every hour', zh: '每小时' },
   daily: { en: 'Daily', zh: '每天' },
   weekly: { en: 'Weekly', zh: '每周' },
+  cron: { en: 'Custom (cron)', zh: '自定义 (cron)' },
 }
 
 const DAY_LABELS = [
@@ -178,6 +180,9 @@ export function AutomationBody({ language, state, density = 'comfortable' }: Pro
                   {a.schedule === 'daily' && (
                     <Badge variant="outline" className="text-[10px]">{a.timeOfDay}</Badge>
                   )}
+                  {a.schedule === 'cron' && a.cronExpression && (
+                    <Badge variant="outline" className="text-[10px] font-mono">{a.cronExpression}</Badge>
+                  )}
                 </div>
                 <p className="text-xs text-muted-foreground mt-1.5 line-clamp-2 whitespace-pre-wrap">
                   {a.prompt}
@@ -210,6 +215,7 @@ export function AutomationBody({ language, state, density = 'comfortable' }: Pro
                     schedule: a.schedule,
                     timeOfDay: a.timeOfDay ?? '09:00',
                     dayOfWeek: a.dayOfWeek ?? 1,
+                    cronExpression: a.cronExpression,
                   })}
                   className="h-7 px-2.5 text-xs"
                 >
@@ -348,6 +354,51 @@ function EditForm({ editing, setEditing, t }: EditFormProps) {
           </div>
         )}
       </div>
+
+      {editing.schedule === 'cron' && (
+        <CronField editing={editing} setEditing={setEditing} t={t} />
+      )}
     </>
+  )
+}
+
+// Cron input + live preview. Kept in its own component so EditForm stays
+// readable — the field carries its own validation + description state.
+interface CronFieldProps {
+  editing: EditingAutomation
+  setEditing: (e: EditingAutomation) => void
+  t: (en: string, zh: string) => string
+}
+
+function CronField({ editing, setEditing, t }: CronFieldProps) {
+  const value = editing.cronExpression ?? ''
+  const err = value ? cronError(value) : t('Required', '必填')
+  const lang = t('x', 'y') === 'y' ? 'zh' : 'en'
+  const preview = !err ? describeCron(value, lang) : null
+  return (
+    <div className="mt-2">
+      <label className="text-xs font-medium text-muted-foreground block mb-1.5">
+        {t('Cron expression (min hour dom mon dow)', 'Cron 表达式（分 时 日 月 周）')}
+      </label>
+      <Input
+        value={value}
+        onChange={(e) => setEditing({ ...editing, cronExpression: e.target.value })}
+        placeholder="0 14 * * 1,3,5"
+        className="font-mono text-xs"
+      />
+      {err ? (
+        <p className="text-[11px] text-destructive mt-1">{err}</p>
+      ) : preview ? (
+        <p className="text-[11px] text-muted-foreground mt-1">
+          {t('Runs ', '运行于 ')}{preview}
+        </p>
+      ) : null}
+      <p className="text-[10px] text-muted-foreground/70 mt-1">
+        {t(
+          'Examples: "0 9 * * *" every day at 09:00 · "*/15 * * * *" every 15 min · "0 14 * * 1,3" Mon + Wed at 14:00',
+          '示例："0 9 * * *" 每日 09:00 · "*/15 * * * *" 每 15 分钟 · "0 14 * * 1,3" 周一周三 14:00',
+        )}
+      </p>
+    </div>
   )
 }
