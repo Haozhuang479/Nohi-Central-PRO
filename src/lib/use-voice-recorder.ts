@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 
 export type VoiceState = 'idle' | 'recording' | 'transcribing' | 'error'
 
@@ -8,18 +8,33 @@ export interface UseVoiceRecorderOptions {
 }
 
 const SAMPLE_RATE = 16000 // whisper expects 16kHz
+// Cap recording at 4 minutes. whisper-cli is invoked with a 30s process
+// timeout on the main side (index.ts), but more importantly the base64
+// PCM round-trip and transcription time both grow with duration and
+// users rarely dictate that long in one take. Hard stop + toast tells
+// them to split up long dictations.
+const MAX_RECORDING_MS = 4 * 60 * 1000
 
 export function useVoiceRecorder({ onTranscript, onError }: UseVoiceRecorderOptions) {
   const [state, setState] = useState<VoiceState>('idle')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [elapsedMs, setElapsedMs] = useState(0)
 
   const audioCtxRef = useRef<AudioContext | null>(null)
   const processorRef = useRef<ScriptProcessorNode | null>(null)
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const samplesRef = useRef<Float32Array[]>([])
+  const startTimeRef = useRef<number>(0)
+  const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const tickTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const stop = useCallback(async () => {
+    // Cancel the hard-stop + tick timers before tearing down audio.
+    if (maxTimerRef.current) { clearTimeout(maxTimerRef.current); maxTimerRef.current = null }
+    if (tickTimerRef.current) { clearInterval(tickTimerRef.current); tickTimerRef.current = null }
+    setElapsedMs(0)
+
     // Disconnect recorder and clear callback references
     if (processorRef.current) {
       processorRef.current.onaudioprocess = null
@@ -101,6 +116,20 @@ export function useVoiceRecorder({ onTranscript, onError }: UseVoiceRecorderOpti
       source.connect(processor)
       processor.connect(ctx.destination)
 
+      // Track elapsed time + hard-stop at MAX_RECORDING_MS.
+      startTimeRef.current = Date.now()
+      setElapsedMs(0)
+      tickTimerRef.current = setInterval(() => {
+        setElapsedMs(Date.now() - startTimeRef.current)
+      }, 200)
+      maxTimerRef.current = setTimeout(() => {
+        onError?.(
+          'Recording hit the 4-minute cap — transcribing what we have. Try shorter takes.',
+        )
+        // stop() is referenced below via ref to avoid the dep cycle
+        stopRef.current?.()
+      }, MAX_RECORDING_MS)
+
       setState('recording')
     } catch (err: unknown) {
       const msg = (err as { message?: string }).message ?? 'Microphone access denied'
@@ -111,10 +140,16 @@ export function useVoiceRecorder({ onTranscript, onError }: UseVoiceRecorderOpti
     }
   }, [state, onError])
 
+  // Stable ref to stop() so the auto-stop timer can call it without
+  // becoming part of start()'s dependency list (which would recreate the
+  // timer on every render).
+  const stopRef = useRef<typeof stop | null>(null)
+  useEffect(() => { stopRef.current = stop }, [stop])
+
   const toggle = useCallback(() => {
     if (state === 'idle' || state === 'error') start()
     else if (state === 'recording') stop()
   }, [state, start, stop])
 
-  return { state, errorMsg, toggle, stop }
+  return { state, errorMsg, elapsedMs, maxMs: MAX_RECORDING_MS, toggle, stop }
 }

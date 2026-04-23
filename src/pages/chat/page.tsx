@@ -185,8 +185,23 @@ export default function ChatPage({ settings }: Props) {
   const addMenuRef = useRef<HTMLDivElement>(null)
 
   // ── Voice recorder ────────────────────────────────────────────────────────
-  const { state: voiceState, toggle: toggleVoice } = useVoiceRecorder({
-    onTranscript: (text) => setInput((prev) => prev ? `${prev} ${text}` : text),
+  // onError was previously unset — voice failures (mic denied, whisper
+  // model missing, transcription empty) just flashed the mic back to idle
+  // with no user-visible signal. Now errors surface via toast.
+  const {
+    state: voiceState,
+    toggle: toggleVoice,
+    elapsedMs: voiceElapsed,
+    maxMs: voiceMaxMs,
+  } = useVoiceRecorder({
+    onTranscript: (text) => {
+      if (!text.trim()) {
+        toast.info(language === 'zh' ? '未识别到语音' : 'No speech detected')
+        return
+      }
+      setInput((prev) => prev ? `${prev} ${text}` : text)
+    },
+    onError: (msg) => toast.error(`${language === 'zh' ? '语音' : 'Voice'}: ${msg}`, { duration: 6000 }),
   })
 
   // Close add menu on outside click
@@ -346,17 +361,19 @@ export default function ChatPage({ settings }: Props) {
   const BUILTIN_COMMANDS: BuiltinCommand[] = useMemo(() => {
     if (language === 'zh') {
       return [
-        { id: 'clear', name: 'clear', description: '清空当前对话消息' },
-        { id: 'new',   name: 'new',   description: '新建一个空对话' },
-        { id: 'help',  name: 'help',  description: '显示键盘快捷键和命令' },
-        { id: 'model', name: 'model', description: '切换模型: /model <名称>' },
+        { id: 'clear',   name: 'clear',   description: '清空当前对话消息' },
+        { id: 'new',     name: 'new',     description: '新建一个空对话' },
+        { id: 'compact', name: 'compact', description: '总结历史并截断,释放上下文' },
+        { id: 'help',    name: 'help',    description: '显示键盘快捷键和命令' },
+        { id: 'model',   name: 'model',   description: '切换模型: /model <名称>' },
       ]
     }
     return [
-      { id: 'clear', name: 'clear', description: 'Clear messages in this chat' },
-      { id: 'new',   name: 'new',   description: 'Start a fresh chat' },
-      { id: 'help',  name: 'help',  description: 'Show keyboard shortcuts + commands' },
-      { id: 'model', name: 'model', description: 'Switch model: /model <name>' },
+      { id: 'clear',   name: 'clear',   description: 'Clear messages in this chat' },
+      { id: 'new',     name: 'new',     description: 'Start a fresh chat' },
+      { id: 'compact', name: 'compact', description: 'Summarise + truncate history to free up context' },
+      { id: 'help',    name: 'help',    description: 'Show keyboard shortcuts + commands' },
+      { id: 'model',   name: 'model',   description: 'Switch model: /model <name>' },
     ]
   }, [language])
 
@@ -380,12 +397,53 @@ export default function ChatPage({ settings }: Props) {
         window.dispatchEvent(new CustomEvent('nohi:chat-action', { detail: 'new-session' }))
         break
       }
+      case 'compact': {
+        // Free up context by truncating to the most recent N=10 turns
+        // (5 user + 5 assistant pairs). The first user message is preserved
+        // as a "session anchor" so the new agent loop still has the original
+        // task framing. A summary marker tells the model what was dropped.
+        // Real LLM-driven summarisation lands in a future phase; this is the
+        // honest minimum that prevents Sonnet 200K runaway.
+        if (!session) return
+        const KEEP_RECENT = 10
+        if (session.messages.length <= KEEP_RECENT + 1) {
+          toast.info(language === 'zh'
+            ? '会话太短,无需压缩'
+            : 'Conversation already short — nothing to compact')
+          break
+        }
+        const first = session.messages[0]
+        const recent = session.messages.slice(-KEEP_RECENT)
+        const droppedCount = session.messages.length - KEEP_RECENT - 1
+        const marker = {
+          id: crypto.randomUUID(),
+          role: 'assistant' as const,
+          content: language === 'zh'
+            ? `_[已压缩: 省略 ${droppedCount} 条历史消息以释放上下文]_`
+            : `_[Compacted: dropped ${droppedCount} earlier messages to free context]_`,
+          timestamp: Date.now(),
+        }
+        const compacted: Session = {
+          ...session,
+          messages: [first, marker, ...recent],
+          updatedAt: Date.now(),
+        }
+        setSession(compacted)
+        if (typeof window !== 'undefined' && window.nohi?.sessions) {
+          window.nohi.sessions.save(compacted).catch(toastIpcError('sessions:save'))
+        }
+        toast.success(language === 'zh'
+          ? `已压缩 ${droppedCount} 条消息`
+          : `Compacted ${droppedCount} messages`)
+        break
+      }
       case 'help': {
         const body = language === 'zh'
           ? `**可用的内置斜杠命令**
 
 - \`/clear\` — 清空当前对话（消息仍保留磁盘历史直到下次保存）
 - \`/new\` — 新建一个空对话
+- \`/compact\` — 压缩对话历史（保留首条 + 最近 10 条，释放上下文）
 - \`/help\` — 显示本帮助
 - \`/model <名称>\` — 切换模型，例如 \`/model claude-opus-4-6\`
 
@@ -398,6 +456,7 @@ export default function ChatPage({ settings }: Props) {
 
 - \`/clear\` — clear the current conversation
 - \`/new\` — start a fresh chat
+- \`/compact\` — compress history (keep first + last 10, free context)
 - \`/help\` — show this help message
 - \`/model <name>\` — switch model, e.g. \`/model claude-opus-4-6\`
 
@@ -422,17 +481,43 @@ export default function ChatPage({ settings }: Props) {
         break
       }
       case 'model': {
-        // `/model <name>` — any text after the slash term becomes the model
-        // name. If they just typed `/model`, prompt via command palette.
+        // `/model <name>` — switch to <name>. Validate against the known
+        // PROVIDER_MODELS table. If <name> belongs to a different provider,
+        // also switch provider so the next send doesn't fail with
+        // "Unknown model" (the v2.8.2 hole this v2.9.1 patch closes).
         const match = input.match(/\/model\s+(\S+)/)
-        if (match) {
-          setModel(match[1])
+        if (!match) {
+          toast.info(language === 'zh'
+            ? '用法: /model <模型名>，例如 /model claude-opus-4-6'
+            : 'Usage: /model <name>, e.g. /model claude-opus-4-6')
+          break
         }
+        const target = match[1]
+        // Find which provider owns this model id
+        let foundProvider: keyof typeof PROVIDER_MODELS | null = null
+        for (const [p, models] of Object.entries(PROVIDER_MODELS) as Array<[keyof typeof PROVIDER_MODELS, string[]]>) {
+          if (models.includes(target)) { foundProvider = p; break }
+        }
+        if (!foundProvider) {
+          // Build a hint showing the closest models the user might have meant
+          const all = Object.values(PROVIDER_MODELS).flat()
+          const hint = all.filter((m) => m.toLowerCase().includes(target.toLowerCase().slice(0, 4))).slice(0, 4).join(', ')
+          toast.error(language === 'zh'
+            ? `未知模型 "${target}"${hint ? `。可能想用: ${hint}` : ''}`
+            : `Unknown model "${target}"${hint ? `. Did you mean: ${hint}` : ''}`,
+            { duration: 8000 })
+          break
+        }
+        if (foundProvider !== provider) {
+          setProvider(foundProvider as Parameters<typeof setProvider>[0])
+        }
+        setModel(target)
+        toast.success(language === 'zh' ? `已切换到 ${target}` : `Switched to ${target}`)
         break
       }
     }
     textareaRef.current?.focus()
-  }, [input, language, session, setSession, setSessions, setModel])
+  }, [input, language, session, setSession, setSessions, setModel, setProvider, provider])
 
   // ── Edit message ──────────────────────────────────────────────────────────
   const handleEditMessage = useCallback((text: string, msgId: string) => {
@@ -604,8 +689,18 @@ export default function ChatPage({ settings }: Props) {
               provider,
             })
           } else if (event.type === 'done' || event.type === 'error') {
+            // Preserve any partial response the user already saw streaming.
+            // Before v2.9.1 we overwrote it with `"Error: ..."`, so a network
+            // blip mid-answer made the half-message vanish. Now we keep the
+            // partial text and append a tagged error footer the markdown
+            // renderer styles in red. handleRetry continues to work because
+            // it slices off the entire last assistant turn anyway.
             const finalContent =
-              event.type === 'error' ? `Error: ${event.message}` : assistantText
+              event.type === 'error'
+                ? (assistantText
+                    ? `${assistantText}\n\n> **⚠ ${language === 'zh' ? '流中断' : 'Stream interrupted'}:** ${event.message}`
+                    : `**${language === 'zh' ? '错误' : 'Error'}:** ${event.message}`)
+                : assistantText
 
             assistantMsgId = crypto.randomUUID()
             const newAssistantMsgId = assistantMsgId
@@ -909,7 +1004,9 @@ export default function ChatPage({ settings }: Props) {
           )}
         </div>
 
-        {/* Plan Mode toggle */}
+        {/* Plan Mode toggle — prompt-side enforcement only. Tagged as
+            experimental until the Phase O approval loop adds actual tool
+            gating, because the model can still skip the plan on a bad day. */}
         <button
           type="button"
           onClick={() => {
@@ -917,8 +1014,18 @@ export default function ChatPage({ settings }: Props) {
             const updated = { ...session, planMode: !session.planMode }
             setSession(updated)
             window.nohi.sessions.save(updated).catch(toastIpcError('sessions:save'))
+            if (!session.planMode) {
+              toast.info(
+                language === 'zh'
+                  ? '计划模式已开启。模型会先输出计划并等你回复 "go" 再执行。注意:目前通过提示词执行,并非硬门控。'
+                  : 'Plan mode on. The model will output a plan and wait for "go". Note: enforced by prompt only — not a hard tool-call gate yet.',
+                { duration: 6000 },
+              )
+            }
           }}
-          title={language === 'zh' ? '计划模式：先规划再执行' : 'Plan Mode: plan before executing'}
+          title={language === 'zh'
+            ? '计划模式 (实验性): 先规划再执行。通过提示词引导,非硬门控。'
+            : 'Plan Mode (experimental): plan before executing. Prompt-side only, not a hard gate.'}
           className={cn(
             'flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-[10px] font-medium transition-colors',
             session?.planMode
@@ -926,7 +1033,7 @@ export default function ChatPage({ settings }: Props) {
               : 'border-border bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
           )}
         >
-          Plan
+          Plan{session?.planMode && <span className="opacity-60 font-normal">· exp</span>}
         </button>
 
         <div className="flex-1" />
@@ -1056,12 +1163,24 @@ export default function ChatPage({ settings }: Props) {
           <div className="flex items-center gap-2">
             <div className="flex-1 h-0.5 rounded-full bg-muted overflow-hidden">
               <div
-                className="h-full bg-muted-foreground/30 rounded-full transition-all"
+                className={cn(
+                  'h-full rounded-full transition-all',
+                  totalTokens / contextWindow >= 0.9
+                    ? 'bg-destructive/80'
+                    : totalTokens / contextWindow >= 0.7
+                      ? 'bg-amber-500/80'
+                      : 'bg-muted-foreground/30',
+                )}
                 style={{ width: `${Math.min((totalTokens / contextWindow) * 100, 100)}%` }}
               />
             </div>
             <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
               {totalTokens.toLocaleString()} / {formatCtxLabel(contextWindow)} tokens
+              {totalTokens / contextWindow >= 0.7 && (
+                <span className="ml-2 text-amber-600 dark:text-amber-400">
+                  {language === 'zh' ? '· 输入 /compact 压缩' : '· type /compact'}
+                </span>
+              )}
             </span>
           </div>
         </div>
@@ -1213,6 +1332,24 @@ export default function ChatPage({ settings }: Props) {
                   </svg>
                 )}
               </button>
+
+              {/* Recording timer: shows MM:SS / cap. Amber past 75%, red near cap. */}
+              {voiceState === 'recording' && (
+                <span
+                  className={cn(
+                    'text-[11px] tabular-nums font-mono',
+                    voiceElapsed / voiceMaxMs >= 0.9
+                      ? 'text-red-500'
+                      : voiceElapsed / voiceMaxMs >= 0.75
+                        ? 'text-amber-500'
+                        : 'text-muted-foreground',
+                  )}
+                >
+                  {String(Math.floor(voiceElapsed / 60000)).padStart(2, '0')}:
+                  {String(Math.floor((voiceElapsed / 1000) % 60)).padStart(2, '0')}
+                  <span className="text-muted-foreground/60"> / {Math.floor(voiceMaxMs / 60000)}:00</span>
+                </span>
+              )}
 
               {/* Stop agent */}
               {isRunning && (

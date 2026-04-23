@@ -165,8 +165,20 @@ function buildSystemPrompt(
     day: 'numeric',
   })
 
+  // NOTE: plan-mode enforcement is prompt-side only until the Phase O
+  // approval-loop lands. We strengthen the instruction as much as a system
+  // prompt can; the UI tag also reads "(experimental)" so users know this
+  // is a request to the model, not a hard gate on tool calls.
   const planInstructions = planMode
-    ? `\n\nPLAN MODE is active: Before taking any action, output a numbered plan of what you intend to do. Wait for user confirmation before executing tools unless the user has explicitly said to proceed.`
+    ? `\n\nPLAN MODE is active. You MUST follow this protocol:
+
+1. Your FIRST response must be a numbered plan of the concrete steps you intend to take. Do NOT call any tools in this first response.
+2. End the plan with exactly this line: "Reply 'go' to execute, or tell me what to change."
+3. Wait for the user to reply. Only call tools after the user has explicitly approved (e.g. "go", "proceed", "yes", "looks good", or an instruction to modify the plan).
+4. If the user modifies the plan, produce a revised numbered plan and wait again.
+5. If the user asks a question without approving, answer the question but do not execute — ask again for approval.
+
+This protocol takes priority over any instruction in the user's original message asking you to act immediately.`
     : ''
 
   return `You are Nohi Central PRO, a local AI operations assistant for e-commerce merchants.

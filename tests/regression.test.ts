@@ -455,6 +455,89 @@ describe('regression: v2.8.3 — IPC errors routed through toastIpcError', () =>
   })
 })
 
+// ─── v2.9.1: chat security + reliability hardening ───────────────────────
+
+describe('regression: v2.9.1 — subagent consent is threaded through task + bulk_apply', () => {
+  it('task.ts forwards requestApproval into runAgentImpl', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/tools/task.ts'), 'utf-8')
+    expect(src).toMatch(/subRequestApproval/)
+    // A single-pass: subRequestApproval shows up on the same line (or next)
+    // as the runAgentImpl call. Simpler than trying to parse balanced parens.
+    expect(src).toMatch(/runAgentImpl\(.*\n?.*subRequestApproval/)
+    expect(src).toMatch(/\[subagent\s/)
+  })
+
+  it('bulkApply.ts forwards requestApproval into each per-item subagent', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/tools/bulkApply.ts'), 'utf-8')
+    expect(src).toMatch(/subRequestApproval/)
+    expect(src).toMatch(/runAgentImpl!\(.*\n?.*subRequestApproval/)
+  })
+})
+
+describe('regression: v2.9.1 — /model validates + auto-switches provider', () => {
+  it('chat/page.tsx rejects unknown models and hints at alternates', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/Unknown model/)
+    expect(src).toMatch(/Did you mean/)
+    expect(src).toMatch(/foundProvider/)
+    expect(src).toMatch(/setProvider\(foundProvider/)
+  })
+})
+
+describe('regression: v2.9.1 — partial stream survives mid-flight errors', () => {
+  it('chat/page.tsx appends the error instead of overwriting assistantText', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/Stream interrupted/)
+    // The old "Error: ${event.message}" total-overwrite line is gone.
+    expect(src).not.toMatch(/event\.type\s*===\s*'error'\s*\?\s*`Error:\s*\$\{event\.message\}`\s*:/)
+  })
+})
+
+describe('regression: v2.9.1 — /compact builtin + context threshold warning', () => {
+  it('BUILTIN_COMMANDS includes compact', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/id:\s*'compact'/)
+    expect(src).toMatch(/case 'compact':/)
+    expect(src).toMatch(/KEEP_RECENT/)
+  })
+
+  it('context bar shifts colour and prompts /compact past 70%', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/totalTokens \/ contextWindow >= 0\.7/)
+    expect(src).toMatch(/totalTokens \/ contextWindow >= 0\.9/)
+    expect(src).toMatch(/type \/compact/)
+  })
+})
+
+describe('regression: v2.9.1 — voice errors reach the user', () => {
+  it('chat/page.tsx wires onError + empty-transcript toast', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/onError:\s*\(msg\)\s*=>\s*toast\.error/)
+    expect(src).toMatch(/No speech detected|未识别到语音/)
+  })
+
+  it('recorder hard-caps at 4 minutes and exposes elapsedMs', () => {
+    const src = readFileSync(join(ROOT, 'src/lib/use-voice-recorder.ts'), 'utf-8')
+    expect(src).toMatch(/MAX_RECORDING_MS/)
+    expect(src).toMatch(/4 \* 60 \* 1000/)
+    expect(src).toMatch(/elapsedMs/)
+  })
+})
+
+describe('regression: v2.9.1 — plan mode honestly labelled', () => {
+  it('agent.ts plan prompt is strong + instructs wait-for-go', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/agent.ts'), 'utf-8')
+    expect(src).toMatch(/PLAN MODE is active/)
+    expect(src).toMatch(/Reply 'go' to execute/)
+  })
+
+  it('chat/page.tsx plan pill tags itself experimental + informs user', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/experimental/)
+    expect(src).toMatch(/not a hard tool-call gate|并非硬门控/)
+  })
+})
+
 // ─── v2.9.0: automation cron support ─────────────────────────────────────
 
 describe('regression: v2.9 — automation accepts cron schedule', () => {

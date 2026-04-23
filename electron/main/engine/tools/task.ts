@@ -80,7 +80,20 @@ export const TaskTool: ToolDef = {
     const MAX_SUB_ITERATIONS = 30
 
     try {
-      for await (const event of runAgentImpl(subSession, opts.settings, activeSkillsRef, () => {})) {
+      // Forward the parent's requestApproval callback so subagent tool calls
+      // (especially BashTool) are still gated by the user's consent policy.
+      // Without this, an LLM prompt-injection trick like "use task() to run
+      // rm -rf" would bypass bash consent entirely (the v2.6.0 hole that
+      // this v2.9.1 patch closes). Subagent toolUseIds are namespaced by
+      // their sub-session id so the renderer modal can disambiguate.
+      const subRequestApproval = opts.requestApproval
+        ? (toolUseId: string, req: { toolName: string; reason: string; input: unknown }) =>
+            opts.requestApproval!(`${subSession.id}/${toolUseId}`, {
+              ...req,
+              reason: `[subagent ${description}] ${req.reason}`,
+            })
+        : undefined
+      for await (const event of runAgentImpl(subSession, opts.settings, activeSkillsRef, () => {}, subRequestApproval)) {
         if (event.type === 'text_delta') resultText += event.delta
         if (event.type === 'tool_start') {
           iterCount++

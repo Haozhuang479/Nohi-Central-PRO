@@ -105,7 +105,17 @@ export const BulkApplyTool: ToolDef = {
             messages: [{ id: `msg-${Date.now()}`, role: 'user', content: prompt, timestamp: Date.now() }],
           }
           let text = ''
-          for await (const event of runAgentImpl!(subSession, opts.settings!, activeSkillsRef, () => {})) {
+          // Forward parent's requestApproval so per-item subagents are still
+          // gated by the user's bash consent policy. Same fix as task.ts in
+          // v2.9.1 — closes the same prompt-injection bypass.
+          const subRequestApproval = opts.requestApproval
+            ? (toolUseId: string, req: { toolName: string; reason: string; input: unknown }) =>
+                opts.requestApproval!(`${subSession.id}/${toolUseId}`, {
+                  ...req,
+                  reason: `[bulk_apply ${description}: ${item.slice(0, 40)}] ${req.reason}`,
+                })
+            : undefined
+          for await (const event of runAgentImpl!(subSession, opts.settings!, activeSkillsRef, () => {}, subRequestApproval)) {
             if (event.type === 'text_delta') text += event.delta
             if (event.type === 'error') throw new Error(event.message)
             if (event.type === 'done') break
