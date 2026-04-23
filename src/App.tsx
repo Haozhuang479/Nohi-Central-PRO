@@ -6,6 +6,7 @@ import { Toaster } from '@/components/ui/sonner'
 import { ErrorBoundary } from '@/components/error-boundary'
 import { CrashWatcher } from '@/components/crash-watcher'
 import { ToolConsent } from '@/components/chat/tool-consent'
+import { PlanApproval } from '@/components/chat/plan-approval'
 import { toastIpcError } from '@/lib/ipc-toast'
 import { toast } from 'sonner'
 import type { NohiSettings } from '../electron/main/engine/types'
@@ -152,6 +153,7 @@ export default function App() {
     <ErrorBoundary>
     <CrashWatcher />
     <ToolConsent />
+    <PlanApproval />
     <LanguageProvider>
       <ChannelStateProvider>
         <HashRouter>

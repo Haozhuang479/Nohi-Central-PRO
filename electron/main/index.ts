@@ -706,6 +706,29 @@ ipcMain.on('agent:approval', (_e, toolUseId: unknown, decision: unknown) => {
   }
 })
 
+// Plan-mode gate resolvers keyed by sessionId. Mirrors the pendingApprovals
+// pattern but carries a richer decision: approve / deny / revise-with-text.
+// Populated when the agent's first iteration in plan mode yields tool calls;
+// drained by the agent:plan-approval IPC reply from the renderer.
+type PlanDecision =
+  | { kind: 'approve' }
+  | { kind: 'deny' }
+  | { kind: 'revise'; reviseText: string }
+const pendingPlans = new Map<string, (d: PlanDecision) => void>()
+
+ipcMain.on('agent:plan-approval', (_e, sessionId: unknown, kind: unknown, reviseText: unknown) => {
+  if (typeof sessionId !== 'string') return
+  const resolver = pendingPlans.get(sessionId)
+  if (!resolver) return
+  if (kind === 'approve') resolver({ kind: 'approve' })
+  else if (kind === 'revise' && typeof reviseText === 'string' && reviseText.trim()) {
+    resolver({ kind: 'revise', reviseText: reviseText.trim() })
+  } else {
+    resolver({ kind: 'deny' })
+  }
+  pendingPlans.delete(sessionId)
+})
+
 ipcMain.on('agent:run', async (event, session: Session) => {
   const settings = getSettings()
   const webContents = event.sender
@@ -745,6 +768,28 @@ ipcMain.on('agent:run', async (event, session: Session) => {
       })
     })
 
+  // Plan-mode gate — emits a plan_approval_request when the model's first
+  // iteration in plan mode wants to call tools. Pauses the agent loop on
+  // this promise until the renderer sends agent:plan-approval. Same
+  // fail-closed semantics as requestApproval: dropped window = deny.
+  const requestPlanApproval = (req: {
+    sessionId: string
+    planText: string
+    toolPreview: Array<{ name: string; input: unknown }>
+  }): Promise<PlanDecision> =>
+    new Promise<PlanDecision>((resolve) => {
+      pendingPlans.set(req.sessionId, (d) => {
+        pendingPlans.delete(req.sessionId)
+        resolve(d)
+      })
+      send('agent:event', {
+        type: 'plan_approval_request',
+        sessionId: req.sessionId,
+        planText: req.planText,
+        toolPreview: req.toolPreview as Array<{ name: string; input: Record<string, unknown> }>,
+      })
+    })
+
   try {
     const generator = runAgent(
       session,
@@ -754,6 +799,7 @@ ipcMain.on('agent:run', async (event, session: Session) => {
         send('agent:event', agentEvent)
       },
       requestApproval,
+      requestPlanApproval,
     )
 
     for await (const agentEvent of generator) {
@@ -775,5 +821,7 @@ ipcMain.on('agent:run', async (event, session: Session) => {
     // otherwise leak promises that never settle.
     for (const resolver of pendingApprovals.values()) resolver('deny')
     pendingApprovals.clear()
+    for (const resolver of pendingPlans.values()) resolver({ kind: 'deny' })
+    pendingPlans.clear()
   }
 })

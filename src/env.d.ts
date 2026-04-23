@@ -41,6 +41,8 @@ declare global {
         abort(sessionId: string): void
         /** Reply to a tool_approval_request event from the agent. */
         approve(toolUseId: string, decision: 'approve' | 'deny'): void
+        /** Reply to a plan_approval_request event. Pass reviseText when kind='revise'. */
+        approvePlan(sessionId: string, kind: 'approve' | 'deny' | 'revise', reviseText?: string): void
         onEvent(callback: (event: AgentEvent) => void): () => void
       }
     }

@@ -71,8 +71,24 @@ export type AgentEvent =
       input: Record<string, unknown>
       reason: string
     }
+  | {
+      // Emitted by the agent loop when planMode is on and the model's
+      // first response in this send includes tool calls. The loop is
+      // paused on a promise until the renderer replies via the
+      // `agent:plan-approval` IPC with one of approve / deny / revise.
+      type: 'plan_approval_request'
+      sessionId: string
+      planText: string
+      toolPreview: Array<{ name: string; input: Record<string, unknown> }>
+    }
   | { type: 'error'; message: string }
   | { type: 'done' }
+
+/** Decision returned by the user in response to a plan_approval_request. */
+export type PlanApprovalDecision =
+  | { kind: 'approve' }
+  | { kind: 'deny' }
+  | { kind: 'revise'; reviseText: string }
 
 // ─── Session types ─────────────────────────────────────────────────────────
 

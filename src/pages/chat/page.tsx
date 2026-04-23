@@ -1031,9 +1031,9 @@ export default function ChatPage({ settings }: Props) {
           )}
         </div>
 
-        {/* Plan Mode toggle — prompt-side enforcement only. Tagged as
-            experimental until the Phase O approval loop adds actual tool
-            gating, because the model can still skip the plan on a bad day. */}
+        {/* Plan Mode toggle — hard gate as of v3.0.0. When on, the first
+            tool-bearing response of each send triggers the plan-approval
+            modal; tools only execute after the user clicks Approve. */}
         <button
           type="button"
           onClick={() => {
@@ -1044,15 +1044,15 @@ export default function ChatPage({ settings }: Props) {
             if (!session.planMode) {
               toast.info(
                 language === 'zh'
-                  ? '计划模式已开启。模型会先输出计划并等你回复 "go" 再执行。注意:目前通过提示词执行,并非硬门控。'
-                  : 'Plan mode on. The model will output a plan and wait for "go". Note: enforced by prompt only — not a hard tool-call gate yet.',
-                { duration: 6000 },
+                  ? '计划模式已开启。每次发送后,智能体若要调用工具,会先弹出计划审核弹窗。'
+                  : 'Plan mode on. Each send: if the agent wants to call tools, a review modal appears before execution.',
+                { duration: 5000 },
               )
             }
           }}
           title={language === 'zh'
-            ? '计划模式 (实验性): 先规划再执行。通过提示词引导,非硬门控。'
-            : 'Plan Mode (experimental): plan before executing. Prompt-side only, not a hard gate.'}
+            ? '计划模式: 工具执行前弹出审核弹窗(批准 / 修订 / 取消)。'
+            : 'Plan Mode: review modal before tools execute (Approve / Revise / Cancel).'}
           className={cn(
             'flex items-center gap-1.5 h-7 px-2.5 rounded-full border text-[10px] font-medium transition-colors',
             session?.planMode
@@ -1060,7 +1060,7 @@ export default function ChatPage({ settings }: Props) {
               : 'border-border bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground'
           )}
         >
-          Plan{session?.planMode && <span className="opacity-60 font-normal">· exp</span>}
+          Plan
         </button>
 
         <div className="flex-1" />

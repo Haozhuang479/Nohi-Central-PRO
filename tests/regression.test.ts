@@ -455,6 +455,111 @@ describe('regression: v2.8.3 — IPC errors routed through toastIpcError', () =>
   })
 })
 
+// ─── v3.0.0: plan mode hard gate ─────────────────────────────────────────
+// Plan mode used to be prompt-side only — the model was asked to wait for
+// "go" but nothing blocked tool dispatch. Phase O turns it into a real
+// pause-and-approve gate: plan_approval_request event + pendingPlans map +
+// renderer modal with Approve / Revise / Cancel.
+
+describe('regression: v3.0.0 — plan_approval_request event + decision type', () => {
+  it('AgentEvent union includes plan_approval_request', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/types.ts'), 'utf-8')
+    expect(src).toMatch(/type:\s*'plan_approval_request'/)
+    expect(src).toMatch(/planText:\s*string/)
+    expect(src).toMatch(/toolPreview:/)
+  })
+
+  it('PlanApprovalDecision type exported for reuse', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/types.ts'), 'utf-8')
+    expect(src).toMatch(/PlanApprovalDecision/)
+    expect(src).toMatch(/'approve'|'deny'|'revise'/)
+  })
+})
+
+describe('regression: v3.0.0 — main process ships pendingPlans + IPC handler', () => {
+  it('main/index.ts declares pendingPlans + agent:plan-approval listener', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8')
+    expect(src).toMatch(/pendingPlans\s*=\s*new Map/)
+    expect(src).toMatch(/ipcMain\.on\(['"]agent:plan-approval['"]/)
+    expect(src).toMatch(/requestPlanApproval/)
+  })
+
+  it('finally block drains pendingPlans with deny on session teardown', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8')
+    expect(src).toMatch(/for \(const resolver of pendingPlans\.values\(\)\) resolver\(\{ kind: 'deny' \}\)/)
+  })
+})
+
+describe('regression: v3.0.0 — agent.ts gates both branches on iteration===1', () => {
+  it('runAgent signature accepts requestPlanApproval', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/agent.ts'), 'utf-8')
+    expect(src).toMatch(/requestPlanApproval\?:/)
+    expect(src).toMatch(/\{\s*kind:\s*'approve'\s*\}/)
+    expect(src).toMatch(/\{\s*kind:\s*'revise'/)
+  })
+
+  it('both Anthropic and OpenAI branches gate on iteration === 1', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/agent.ts'), 'utf-8')
+    const matches = src.match(/session\.planMode && iteration === 1/g) ?? []
+    expect(matches.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('revise branch appends user turn and continues the loop', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/agent.ts'), 'utf-8')
+    // Both branches must push a user message on revise. Check for the
+    // distinctive `decision.reviseText` reference to guarantee we're
+    // actually forwarding the user's text, not dropping it.
+    const reviseRefs = src.match(/decision\.reviseText/g) ?? []
+    expect(reviseRefs.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('planInstructions text reflects the modal flow, not the old go-reply hack', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/agent.ts'), 'utf-8')
+    expect(src).toMatch(/Nohi UI will intercept/)
+    expect(src).not.toMatch(/Reply 'go' to execute/)
+  })
+})
+
+describe('regression: v3.0.0 — preload exposes approvePlan', () => {
+  it('preload/index.ts wires agent:plan-approval send', () => {
+    const src = readFileSync(join(ROOT, 'electron/preload/index.ts'), 'utf-8')
+    expect(src).toMatch(/approvePlan:/)
+    expect(src).toMatch(/agent:plan-approval/)
+  })
+
+  it('env.d.ts types approvePlan on window.nohi.agent', () => {
+    const src = readFileSync(join(ROOT, 'src/env.d.ts'), 'utf-8')
+    expect(src).toMatch(/approvePlan\(sessionId: string,\s*kind:\s*'approve' \| 'deny' \| 'revise'/)
+  })
+})
+
+describe('regression: v3.0.0 — PlanApproval modal mounted + wired', () => {
+  it('PlanApproval component exists and subscribes to plan_approval_request', () => {
+    const src = readFileSync(join(ROOT, 'src/components/chat/plan-approval.tsx'), 'utf-8')
+    expect(src).toMatch(/plan_approval_request/)
+    expect(src).toMatch(/approvePlan\(pending\.sessionId/)
+    // All three decisions surface as separate buttons / code paths.
+    expect(src).toMatch(/'approve'/)
+    expect(src).toMatch(/'deny'/)
+    expect(src).toMatch(/'revise'/)
+  })
+
+  it('App.tsx mounts PlanApproval next to ToolConsent', () => {
+    const src = readFileSync(join(ROOT, 'src/App.tsx'), 'utf-8')
+    expect(src).toMatch(/<PlanApproval\s*\/>/)
+    expect(src).toMatch(/from ['"]@\/components\/chat\/plan-approval['"]/)
+  })
+})
+
+describe('regression: v3.0.0 — plan toggle label reflects hard gate', () => {
+  it('chat page toggle title + toast describe the modal, not prompt-only', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/hard gate|review modal/i)
+    expect(src).not.toMatch(/not a hard tool-call gate/)
+    expect(src).not.toMatch(/非硬门控/)
+  })
+})
+
 // ─── v2.9.2: CLAUDE.md + attachments + stale model ───────────────────────
 
 describe('regression: v2.9.2 — CLAUDE.md reads home + enforces size caps', () => {
@@ -565,17 +670,14 @@ describe('regression: v2.9.1 — voice errors reach the user', () => {
   })
 })
 
-describe('regression: v2.9.1 — plan mode honestly labelled', () => {
-  it('agent.ts plan prompt is strong + instructs wait-for-go', () => {
+describe('regression: v2.9.1 — plan mode prompt is present (superseded by v3.0.0)', () => {
+  // v2.9.1 asserted "Reply 'go' to execute" in planInstructions and
+  // "experimental" in the pill. v3.0.0 replaced both when plan mode
+  // became a real gate — see the v3.0.0 block for the current invariants.
+  // Keeping a thin assertion here so the planInstructions still exists.
+  it('agent.ts still emits a planInstructions block when planMode is on', () => {
     const src = readFileSync(join(ROOT, 'electron/main/engine/agent.ts'), 'utf-8')
     expect(src).toMatch(/PLAN MODE is active/)
-    expect(src).toMatch(/Reply 'go' to execute/)
-  })
-
-  it('chat/page.tsx plan pill tags itself experimental + informs user', () => {
-    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
-    expect(src).toMatch(/experimental/)
-    expect(src).toMatch(/not a hard tool-call gate|并非硬门控/)
   })
 })
 

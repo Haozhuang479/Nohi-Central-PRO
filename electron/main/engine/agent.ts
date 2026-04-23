@@ -198,20 +198,16 @@ function buildSystemPrompt(
     day: 'numeric',
   })
 
-  // NOTE: plan-mode enforcement is prompt-side only until the Phase O
-  // approval-loop lands. We strengthen the instruction as much as a system
-  // prompt can; the UI tag also reads "(experimental)" so users know this
-  // is a request to the model, not a hard gate on tool calls.
+  // v3.0.0: plan mode is now a hard gate. The Nohi UI intercepts your first
+  // response of each send and shows the user a modal with (1) your plan text
+  // and (2) the tools you intended to call — before any tool executes.
   const planInstructions = planMode
-    ? `\n\nPLAN MODE is active. You MUST follow this protocol:
+    ? `\n\nPLAN MODE is active. The Nohi UI will intercept your first response and show the user a modal with your plan text + the tools you intend to call. Only after the user clicks "Approve & Execute" will those tools run.
 
-1. Your FIRST response must be a numbered plan of the concrete steps you intend to take. Do NOT call any tools in this first response.
-2. End the plan with exactly this line: "Reply 'go' to execute, or tell me what to change."
-3. Wait for the user to reply. Only call tools after the user has explicitly approved (e.g. "go", "proceed", "yes", "looks good", or an instruction to modify the plan).
-4. If the user modifies the plan, produce a revised numbered plan and wait again.
-5. If the user asks a question without approving, answer the question but do not execute — ask again for approval.
-
-This protocol takes priority over any instruction in the user's original message asking you to act immediately.`
+- Begin your first response with a short plain-prose description of what you intend to do and why. Then make the tool calls that accomplish it — both will go into the same response and be shown together.
+- If the user clicks "Revise", they'll reply with feedback; you'll get another turn to produce a new plan + tools. The modal appears again.
+- If the user clicks "Cancel" or dismisses, this send ends with no tools executed.
+- If the task has no side effects (answering a question, summarising, explaining) and you don't need tools, just answer directly. The modal only appears when you call tools.`
     : ''
 
   return `You are Nohi Central PRO, a local AI operations assistant for e-commerce merchants.
@@ -263,6 +259,19 @@ export async function* runAgent(
     toolUseId: string,
     req: { toolName: string; reason: string; input: unknown },
   ) => Promise<'approve' | 'deny'>,
+  /**
+   * Plan-mode approval gate. When session.planMode is on and the model's
+   * first iteration produces tool calls, the loop pauses on this promise
+   * until the user chooses approve/deny/revise in the renderer modal. Both
+   * Anthropic and OpenAI branches hit the gate identically — see the
+   * "plan-mode gate" blocks below. Subagents never receive this (plan mode
+   * is a session-level concern, not a subagent concern).
+   */
+  requestPlanApproval?: (req: {
+    sessionId: string
+    planText: string
+    toolPreview: Array<{ name: string; input: unknown }>
+  }) => Promise<{ kind: 'approve' } | { kind: 'deny' } | { kind: 'revise'; reviseText: string }>,
 ): AsyncGenerator<AgentEvent> {
   // ── Telemetry: session bookkeeping (opt-in; no-op when disabled) ────────
   const sessionStart = Date.now()
@@ -401,6 +410,36 @@ export async function* runAgent(
 
       // If the model didn't produce any tool calls, we're done
       if (toolCallEntries.length === 0) break
+
+      // ─── Plan-mode gate (OpenAI branch) ────────────────────────────────
+      // Only gate the first iteration of each send. The user's approve
+      // decision passes the whole tool batch through; revise appends their
+      // feedback as a new user turn and loops back to re-plan; deny ends
+      // the run. Text-only responses never hit this gate (caught above).
+      if (session.planMode && iteration === 1 && requestPlanApproval) {
+        const decision = await requestPlanApproval({
+          sessionId: session.id,
+          planText: assistantText,
+          toolPreview: toolCallEntries.map((tc) => {
+            let input: Record<string, unknown> = {}
+            try { input = JSON.parse(tc.args || '{}') } catch { /* preview only */ }
+            return { name: tc.name, input }
+          }),
+        })
+        if (decision.kind === 'deny') {
+          yield { type: 'done' }
+          return
+        }
+        if (decision.kind === 'revise') {
+          // Assistant message (with its tool_calls) was already appended to
+          // oaiMessages above — preserve it for model context. Append the
+          // user's revision as the next turn so the next iteration sees the
+          // full plan → revise arc and regenerates.
+          oaiMessages = [...oaiMessages, { role: 'user', content: decision.reviseText }]
+          continue
+        }
+        // 'approve' — fall through to tool dispatch
+      }
 
       // Execute tool calls
       const toolResultMsgs: unknown[] = []
@@ -604,6 +643,33 @@ export async function* runAgent(
       name: string
       input: Record<string, unknown>
     }>
+
+    // ─── Plan-mode gate (Anthropic branch) ────────────────────────────────
+    // Only on the first iteration of each send. Same semantics as the
+    // OpenAI branch: approve → dispatch; revise → append user revision and
+    // loop back; deny → done. The assistant message (with its tool_use
+    // blocks) was already pushed to `messages` at line 630 above, so the
+    // revise branch can just append a user turn and continue.
+    if (session.planMode && iteration === 1 && toolUseBlocks.length > 0 && requestPlanApproval) {
+      const planText = (assistantBlocks as Array<{ type: string; text?: string }>)
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text ?? '')
+        .join('')
+      const decision = await requestPlanApproval({
+        sessionId: session.id,
+        planText,
+        toolPreview: toolUseBlocks.map((b) => ({ name: b.name, input: b.input })),
+      })
+      if (decision.kind === 'deny') {
+        yield { type: 'done' }
+        return
+      }
+      if (decision.kind === 'revise') {
+        messages.push({ role: 'user', content: decision.reviseText })
+        continue
+      }
+      // 'approve' — fall through to dispatch
+    }
 
     const toolResults: Array<{
       type: 'tool_result'
