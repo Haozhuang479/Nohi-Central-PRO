@@ -180,9 +180,32 @@ export default function ChatPage({ settings }: Props) {
 
   // ── File attachment ───────────────────────────────────────────────────────
   const [attachedImages, setAttachedImages] = useState<Array<{ name: string; base64: string; mediaType: string }>>([])
+  // Text attachments are tracked structurally (like images) since v2.9.2 so
+  // users can see what's attached, remove a single file, and we can de-dup
+  // by (name + size). Before this, text content was inlined as a blockquote
+  // directly into the input textarea — once there, the user had to hunt
+  // through the text to surgically delete it.
+  const [attachedTexts, setAttachedTexts] = useState<Array<{ id: string; name: string; content: string; bytes: number }>>([])
   const [isDragging, setIsDragging] = useState(false)
   const [showAddMenu, setShowAddMenu] = useState(false)
   const addMenuRef = useRef<HTMLDivElement>(null)
+
+  // Helper: add a text attachment unless an identical one (same name + bytes
+  // + content-hash-of-first-100-chars) already exists.
+  const addTextAttachment = useCallback((name: string, content: string) => {
+    setAttachedTexts((prev) => {
+      const fingerprint = `${name}::${content.length}::${content.slice(0, 100)}`
+      if (prev.some((a) => `${a.name}::${a.bytes}::${a.content.slice(0, 100)}` === fingerprint)) {
+        return prev
+      }
+      return [...prev, {
+        id: crypto.randomUUID(),
+        name,
+        content,
+        bytes: new TextEncoder().encode(content).byteLength,
+      }]
+    })
+  }, [])
 
   // ── Voice recorder ────────────────────────────────────────────────────────
   // onError was previously unset — voice failures (mic denied, whisper
@@ -240,11 +263,7 @@ export default function ChatPage({ settings }: Props) {
               toast.error(`${fileName}: looks like a binary file — skipped`, { duration: 6000 })
               continue
             }
-            const block = `\n\n> **File: ${fileName}**\n>\n${file.content
-              .split('\n')
-              .map((l: string) => `> ${l}`)
-              .join('\n')}\n`
-            setInput((prev) => prev + block)
+            addTextAttachment(fileName, file.content)
           }
         }
         textareaRef.current?.focus()
@@ -252,7 +271,7 @@ export default function ChatPage({ settings }: Props) {
         // dialog cancelled
       }
     }
-  }, [])
+  }, [addTextAttachment])
 
   // ── Working directory picker ──────────────────────────────────────────────
   const openDirPicker = useCallback(async () => {
@@ -318,15 +337,11 @@ export default function ChatPage({ settings }: Props) {
           toast.error(`${file.name}: looks like a binary file — skipped`, { duration: 6000 })
           continue
         }
-        const block = `\n\n> **File: ${file.name}**\n>\n${text
-          .split('\n')
-          .map((l: string) => `> ${l}`)
-          .join('\n')}\n`
-        setInput((prev) => prev + block)
+        addTextAttachment(file.name, text)
       }
     }
     textareaRef.current?.focus()
-  }, [])
+  }, [addTextAttachment])
 
   // ── Handle textarea input (slash commands) ────────────────────────────────
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -561,6 +576,17 @@ export default function ChatPage({ settings }: Props) {
         setSession(activeSession)
       }
 
+      // Compose the final text body: prepend any text attachments as fenced
+      // sections the model can clearly distinguish from the user's message.
+      // Kept server-agnostic (still plain text) so both the Anthropic and
+      // OpenAI branches receive the same shape.
+      const textWithAttachments = attachedTexts.length > 0
+        ? [
+            ...attachedTexts.map((a) => `> **File: ${a.name}** (${a.bytes.toLocaleString()} bytes)\n>\n${a.content.split('\n').map((l) => `> ${l}`).join('\n')}`),
+            text,
+          ].join('\n\n')
+        : text
+
       // Build content: plain text, or array of image + text blocks
       const content: string | Array<{ type: string; [k: string]: unknown }> =
         attachedImages.length > 0
@@ -569,9 +595,9 @@ export default function ChatPage({ settings }: Props) {
                 type: 'image',
                 source: { type: 'base64', media_type: img.mediaType, data: img.base64 },
               })),
-              { type: 'text', text },
+              { type: 'text', text: textWithAttachments },
             ]
-          : text
+          : textWithAttachments
 
       const userMsg = {
         id: crypto.randomUUID(),
@@ -613,6 +639,7 @@ export default function ChatPage({ settings }: Props) {
       setIsRunning(true)
       setInput('')
       setAttachedImages([])
+      setAttachedTexts([])
       setStreamingText('')
       setThinkingText('')
       setShowSlashMenu(false)
@@ -770,7 +797,7 @@ export default function ChatPage({ settings }: Props) {
         }, 800)
       }
     },
-    [session, isRunning, model, provider, settings, setSession, setSessions, setIsRunning, addTokens, language, attachedImages]
+    [session, isRunning, model, provider, settings, setSession, setSessions, setIsRunning, addTokens, language, attachedImages, attachedTexts]
   )
 
   // ── Retry last assistant message (defined after sendMessage to close over it) ─
@@ -1218,6 +1245,37 @@ export default function ChatPage({ settings }: Props) {
                     type="button"
                     onClick={() => setAttachedImages((prev) => prev.filter((_, j) => j !== i))}
                     className="absolute -top-1.5 -right-1.5 size-4 rounded-full bg-foreground text-background text-[9px] flex items-center justify-center opacity-0 group-hover/img:opacity-100 transition-opacity"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Text attachment chips. Each shows name + byte count and has a
+              remove button. Content is inlined at send time. */}
+          {attachedTexts.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-4 pt-2">
+              {attachedTexts.map((a) => (
+                <div
+                  key={a.id}
+                  className="group/txt relative flex items-center gap-1.5 h-7 pl-2.5 pr-6 rounded-full bg-muted/60 text-[11px] text-foreground max-w-[220px]"
+                  title={a.name}
+                >
+                  <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-60">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                  </svg>
+                  <span className="truncate">{a.name}</span>
+                  <span className="opacity-50 shrink-0">
+                    {a.bytes >= 1024 ? `${(a.bytes / 1024).toFixed(1)}k` : `${a.bytes}b`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setAttachedTexts((prev) => prev.filter((t) => t.id !== a.id))}
+                    aria-label={language === 'zh' ? '移除附件' : 'Remove attachment'}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 size-4 rounded-full bg-foreground/10 hover:bg-foreground hover:text-background text-[10px] flex items-center justify-center opacity-60 group-hover/txt:opacity-100 transition-opacity"
                   >
                     ×
                   </button>

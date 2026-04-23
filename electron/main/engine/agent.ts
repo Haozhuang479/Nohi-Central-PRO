@@ -6,6 +6,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { readFile } from 'fs/promises'
 import { join, resolve } from 'path'
 import { existsSync } from 'fs'
+import { homedir } from 'os'
 import type {
   Message,
   AgentEvent,
@@ -120,22 +121,54 @@ async function* streamOpenAI(
 }
 
 // ─── CLAUDE.md memory injection ───────────────────────────────────────────
+//
+// Reads (in priority order):
+//   1. <workingDir>/CLAUDE.md                — per-project
+//   2. <workingDir>/.claude/CLAUDE.md        — per-project, hidden dir
+//   3. ~/.claude/CLAUDE.md                   — user-global (v2.9.2)
+// Each source is capped at PER_FILE_CAP bytes and the total injection is
+// capped at TOTAL_CAP bytes. Exceeding either limit appends a "[truncated]"
+// marker so the model knows there's more it's not seeing. Prevents a huge
+// CLAUDE.md from silently burning every turn's context budget.
+
+const CLAUDE_MD_PER_FILE_CAP = 50_000   // ~12.5k tokens per source
+const CLAUDE_MD_TOTAL_CAP    = 150_000  // ~37k tokens total
 
 async function loadClaudeMemory(workingDir: string): Promise<string> {
-  const candidates = [
-    join(workingDir, 'CLAUDE.md'),
-    join(workingDir, '.claude', 'CLAUDE.md'),
+  const candidates: Array<{ path: string; label: string }> = [
+    { path: join(workingDir, 'CLAUDE.md'),              label: 'project CLAUDE.md' },
+    { path: join(workingDir, '.claude', 'CLAUDE.md'),   label: 'project .claude/CLAUDE.md' },
+    { path: join(homedir(), '.claude', 'CLAUDE.md'),    label: 'user ~/.claude/CLAUDE.md' },
   ]
-  for (const p of candidates) {
-    const abs = resolve(p)
-    if (existsSync(abs)) {
-      try {
-        const content = await readFile(abs, 'utf-8')
-        if (content.trim()) return `\n\n---\n# Memory (CLAUDE.md)\n${content.trim()}\n---`
-      } catch { /* ignore */ }
-    }
+  const sections: string[] = []
+  let budget = CLAUDE_MD_TOTAL_CAP
+  const seen = new Set<string>()
+  for (const { path, label } of candidates) {
+    if (budget <= 0) break
+    const abs = resolve(path)
+    // De-dup when workingDir === homedir (the same file would appear twice).
+    if (seen.has(abs)) continue
+    seen.add(abs)
+    if (!existsSync(abs)) continue
+    try {
+      let content = (await readFile(abs, 'utf-8')).trim()
+      if (!content) continue
+      let truncatedFile = false
+      if (content.length > CLAUDE_MD_PER_FILE_CAP) {
+        content = content.slice(0, CLAUDE_MD_PER_FILE_CAP)
+        truncatedFile = true
+      }
+      if (content.length > budget) {
+        content = content.slice(0, budget)
+        truncatedFile = true
+      }
+      budget -= content.length
+      const footer = truncatedFile ? '\n[truncated — file exceeded size cap]' : ''
+      sections.push(`## ${label}\n${content}${footer}`)
+    } catch { /* ignore */ }
   }
-  return ''
+  if (sections.length === 0) return ''
+  return `\n\n---\n# Memory (CLAUDE.md)\n${sections.join('\n\n')}\n---`
 }
 
 // ─── Tool registry ─────────────────────────────────────────────────────────

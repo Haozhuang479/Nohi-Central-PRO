@@ -17,6 +17,8 @@ import {
 import { useAIStore } from '@/store/ai-store'
 import { cn } from '@/lib/utils'
 import { useLanguage } from '@/lib/language-context'
+import { PROVIDER_MODELS } from '@/lib/providers'
+import { toast } from 'sonner'
 import { CHAT_SIDEBAR_NAV, labelFor } from '@/lib/chat-nav'
 import { toastIpcError } from '@/lib/ipc-toast'
 import type { NohiSettings, Session } from '../../../electron/main/engine/types'
@@ -273,16 +275,33 @@ export function ChatLayout({ settings, onSettingsSave }: ChatLayoutProps) {
   }, [session, setSession, setSessions])
 
   // Duplicate — loads the full session, writes a copy with a fresh id.
+  // If the source session was last run on a model that's no longer in
+  // PROVIDER_MODELS (e.g. claude-opus-4-5 after a model refresh), swap it
+  // for the current ai-store model so the new copy doesn't instantly
+  // error with "Unknown model" on the next send.
   const duplicateSession = useCallback(async (id: string, e: React.MouseEvent) => {
     e.stopPropagation()
     if (typeof window === 'undefined' || !window.nohi?.sessions) return
     try {
       const full = await window.nohi.sessions.load(id)
       if (!full) return
+      const allModels = Object.values(PROVIDER_MODELS).flat()
+      let model = full.model
+      if (!allModels.includes(model)) {
+        const fallback = useAIStore.getState().model
+        toast.info(
+          language === 'zh'
+            ? `模型 "${model}" 已不可用,已重映射到 "${fallback}"`
+            : `Model "${model}" is no longer available — remapped to "${fallback}"`,
+          { duration: 6000 },
+        )
+        model = fallback
+      }
       const copy: Session = {
         ...full,
         id: crypto.randomUUID(),
         title: `${full.title} (${language === 'zh' ? '副本' : 'copy'})`,
+        model,
         createdAt: Date.now(),
         updatedAt: Date.now(),
       }

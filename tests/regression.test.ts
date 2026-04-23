@@ -455,6 +455,47 @@ describe('regression: v2.8.3 — IPC errors routed through toastIpcError', () =>
   })
 })
 
+// ─── v2.9.2: CLAUDE.md + attachments + stale model ───────────────────────
+
+describe('regression: v2.9.2 — CLAUDE.md reads home + enforces size caps', () => {
+  it('loadClaudeMemory checks user-global path and applies per-file + total caps', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/agent.ts'), 'utf-8')
+    expect(src).toMatch(/homedir\(\)/)
+    expect(src).toMatch(/~\/\.claude\/CLAUDE\.md|user CLAUDE\.md|\.claude.*CLAUDE\.md/)
+    expect(src).toMatch(/CLAUDE_MD_PER_FILE_CAP/)
+    expect(src).toMatch(/CLAUDE_MD_TOTAL_CAP/)
+    expect(src).toMatch(/\[truncated/)
+  })
+})
+
+describe('regression: v2.9.2 — text attachments are structured + removable', () => {
+  it('chat/page.tsx tracks attachedTexts with per-item ids + remove UI', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/attachedTexts/)
+    expect(src).toMatch(/setAttachedTexts/)
+    expect(src).toMatch(/addTextAttachment/)
+    // Remove button filters by id, not index, so re-ordering is safe.
+    expect(src).toMatch(/setAttachedTexts\(\(prev\)\s*=>\s*prev\.filter\(\(t\)\s*=>\s*t\.id\s*!==\s*a\.id\)\)/)
+  })
+
+  it('chat/page.tsx no longer writes the text-attachment blockquote straight into input', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    // Old pattern: `setInput((prev) => prev + block)` where block was the
+    // blockquoted file. Now text attachments flow through addTextAttachment
+    // and get inlined only at send time.
+    expect(src).not.toMatch(/setInput\(\(prev\)\s*=>\s*prev\s*\+\s*block\)/)
+  })
+})
+
+describe('regression: v2.9.2 — duplicateSession remaps stale models', () => {
+  it('chat/layout.tsx checks PROVIDER_MODELS + falls back on copy', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/layout.tsx'), 'utf-8')
+    expect(src).toMatch(/PROVIDER_MODELS/)
+    expect(src).toMatch(/allModels\.includes\(model\)/)
+    expect(src).toMatch(/remapped to|已重映射到/)
+  })
+})
+
 // ─── v2.9.1: chat security + reliability hardening ───────────────────────
 
 describe('regression: v2.9.1 — subagent consent is threaded through task + bulk_apply', () => {
