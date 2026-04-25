@@ -141,8 +141,15 @@ app.whenReady().then(async () => {
   await mkdir(join(homedir(), '.nohi', 'logs'), { recursive: true })
   // Apply telemetry setting from disk on boot
   setTelemetryEnabled(!!(getSettings() as { telemetryEnabled?: boolean }).telemetryEnabled)
-  // Install header-level CSP (defence-in-depth with the meta tag in index.html)
-  installHeaderCsp()
+  // Install header-level CSP for the production build only. In `electron-vite
+  // dev` the renderer is loaded over http://localhost:<port> with HMR
+  // (websocket + injected react-refresh inline scripts) which the prod CSP
+  // would block — empty page / black screen. The meta-tag CSP in index.html
+  // still applies in dev for baseline coverage; full header-level CSP only
+  // matters once the bundled production build is loaded from file://.
+  if (!is.dev) {
+    installHeaderCsp()
+  }
   log('info', '[startup] Nohi Central PRO main process up')
 
   // Register custom protocol to serve local images in the renderer.

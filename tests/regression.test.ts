@@ -1059,4 +1059,12 @@ describe('regression: v2.5.2 — header CSP + deny window.open', () => {
       () => readFileSync(join(ROOT, 'Nohi-Central-PRO/package.json'), 'utf-8'),
     ).toThrow()
   })
+
+  // v3.1.1: header-level CSP must skip dev mode or vite HMR breaks (black
+  // screen). Without this gate, electron-vite dev's WebSocket + injected
+  // react-refresh inline scripts get blocked by the prod CSP.
+  it('main/index.ts gates installHeaderCsp() on !is.dev', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8')
+    expect(src).toMatch(/if\s*\(!is\.dev\)\s*\{[\s\S]{0,80}installHeaderCsp\(\)/)
+  })
 })
