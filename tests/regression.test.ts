@@ -493,6 +493,25 @@ describe('regression: v3.1.0 — revised plan shows a line diff', () => {
   })
 })
 
+describe('regression: v3.1.2 — modal mounts live inside LanguageProvider', () => {
+  it('App.tsx puts ToolConsent + PlanApproval inside <LanguageProvider>', () => {
+    const src = readFileSync(join(ROOT, 'src/App.tsx'), 'utf-8')
+    // Both modal mounts must appear after the opening LanguageProvider tag
+    // and before its closing tag. Anywhere outside will crash with
+    // "useLanguage must be used within LanguageProvider".
+    const openIdx = src.indexOf('<LanguageProvider>')
+    const closeIdx = src.indexOf('</LanguageProvider>')
+    const toolIdx = src.indexOf('<ToolConsent />')
+    const planIdx = src.indexOf('<PlanApproval />')
+    expect(openIdx).toBeGreaterThan(-1)
+    expect(closeIdx).toBeGreaterThan(openIdx)
+    expect(toolIdx).toBeGreaterThan(openIdx)
+    expect(toolIdx).toBeLessThan(closeIdx)
+    expect(planIdx).toBeGreaterThan(openIdx)
+    expect(planIdx).toBeLessThan(closeIdx)
+  })
+})
+
 describe('regression: v3.1.0 — plan decision badges in chat history', () => {
   it('SessionMessage type carries optional metadata.planDecision', () => {
     const src = readFileSync(join(ROOT, 'electron/main/engine/types.ts'), 'utf-8')

@@ -152,9 +152,13 @@ export default function App() {
   return (
     <ErrorBoundary>
     <CrashWatcher />
-    <ToolConsent />
-    <PlanApproval />
     <LanguageProvider>
+      {/* ToolConsent + PlanApproval live INSIDE LanguageProvider because
+          PlanApproval (added in v3.0.0) calls useLanguage() for the modal
+          labels. v3.1.2 fix — they were previously outside, which crashed
+          the boundary the moment the renderer mounted. */}
+      <ToolConsent />
+      <PlanApproval />
       <ChannelStateProvider>
         <HashRouter>
           <Suspense fallback={<AppSpinner />}>
