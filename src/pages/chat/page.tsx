@@ -239,37 +239,49 @@ export default function ChatPage({ settings }: Props) {
   }, [showAddMenu])
 
   const attachFile = useCallback(async () => {
-    if (typeof window !== 'undefined' && window.nohi?.dialog?.openFile) {
-      try {
-        const results = await window.nohi.dialog.openFile()
-        if (!results) return
-        for (const file of results) {
-          const fileName = file.path.split('/').pop() ?? file.path
-          if (file.isImage && file.base64 && file.mediaType) {
-            // base64 expands 3 bytes → 4 chars; approximate the original.
-            const bytes = Math.floor(file.base64.length * 0.75)
-            if (bytes > MAX_IMAGE_BYTES) {
-              toast.error(`${fileName}: image exceeds 5 MB limit`, { duration: 6000 })
-              continue
-            }
-            setAttachedImages((prev) => [...prev, { name: fileName, base64: file.base64!, mediaType: file.mediaType! }])
-          } else if (!file.isImage && file.content !== undefined) {
-            const bytes = new TextEncoder().encode(file.content).byteLength
-            if (bytes > MAX_TEXT_BYTES) {
-              toast.error(`${fileName}: text exceeds 1 MB limit`, { duration: 6000 })
-              continue
-            }
-            if (looksBinary(file.content)) {
-              toast.error(`${fileName}: looks like a binary file — skipped`, { duration: 6000 })
-              continue
-            }
-            addTextAttachment(fileName, file.content)
+    // Devtools breadcrumb so users + we can confirm the click reached this
+    // handler at all. Cheap and removed-at-prod-bundle by the build.
+    // eslint-disable-next-line no-console
+    console.debug('[chat] attachFile() invoked')
+    if (typeof window === 'undefined' || !window.nohi?.dialog?.openFile) {
+      // The IPC bridge is missing — preload didn't load or window.nohi was
+      // overwritten. This is the case where clicking "Attach file" did
+      // genuinely nothing before v3.1.3. Tell the user instead of swallowing.
+      toast.error('File picker unavailable — window.nohi.dialog is missing. Restart the app.', { duration: 8000 })
+      return
+    }
+    try {
+      const results = await window.nohi.dialog.openFile()
+      if (!results) return  // user cancelled the picker — keep silent
+      for (const file of results) {
+        const fileName = file.path.split('/').pop() ?? file.path
+        if (file.isImage && file.base64 && file.mediaType) {
+          // base64 expands 3 bytes → 4 chars; approximate the original.
+          const bytes = Math.floor(file.base64.length * 0.75)
+          if (bytes > MAX_IMAGE_BYTES) {
+            toast.error(`${fileName}: image exceeds 5 MB limit`, { duration: 6000 })
+            continue
           }
+          setAttachedImages((prev) => [...prev, { name: fileName, base64: file.base64!, mediaType: file.mediaType! }])
+        } else if (!file.isImage && file.content !== undefined) {
+          const bytes = new TextEncoder().encode(file.content).byteLength
+          if (bytes > MAX_TEXT_BYTES) {
+            toast.error(`${fileName}: text exceeds 1 MB limit`, { duration: 6000 })
+            continue
+          }
+          if (looksBinary(file.content)) {
+            toast.error(`${fileName}: looks like a binary file — skipped`, { duration: 6000 })
+            continue
+          }
+          addTextAttachment(fileName, file.content)
         }
-        textareaRef.current?.focus()
-      } catch {
-        // dialog cancelled
       }
+      textareaRef.current?.focus()
+    } catch (err) {
+      // Distinguish "user cancelled" (Promise resolves to null, handled
+      // above) from "actual IPC failure" (rejection). The former should be
+      // silent; the latter must surface or we're back to the v3.1.x bug.
+      toastIpcError('dialog:openFile')(err)
     }
   }, [addTextAttachment])
 

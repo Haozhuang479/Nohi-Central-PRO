@@ -485,10 +485,13 @@ ipcMain.handle('dialog:open-dir', async () => {
 ipcMain.handle('dialog:open-file', async () => {
   const result = await dialog.showOpenDialog(mainWindow!, {
     properties: ['openFile', 'multiSelections'],
+    // macOS picks the first filter as the default — putting "All Files" first
+    // means PNG/JPG aren't greyed out on open. Users can still narrow to
+    // Images or Text & Code from the dropdown.
     filters: [
-      { name: 'Text & Code', extensions: ['txt', 'md', 'json', 'csv', 'ts', 'tsx', 'js', 'jsx', 'py', 'sh', 'yaml', 'yml', 'toml', 'xml', 'html', 'css'] },
-      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] },
       { name: 'All Files', extensions: ['*'] },
+      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp'] },
+      { name: 'Text & Code', extensions: ['txt', 'md', 'json', 'csv', 'ts', 'tsx', 'js', 'jsx', 'py', 'sh', 'yaml', 'yml', 'toml', 'xml', 'html', 'css'] },
     ],
   })
   if (result.canceled || result.filePaths.length === 0) return null

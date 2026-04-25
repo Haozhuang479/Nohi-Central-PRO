@@ -493,6 +493,24 @@ describe('regression: v3.1.0 — revised plan shows a line diff', () => {
   })
 })
 
+describe('regression: v3.1.3 — dialog:open-file default filter shows all files', () => {
+  it('main/index.ts dialog filters list All Files first', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/index.ts'), 'utf-8')
+    // Anchor on the dialog:open-file handler block, then assert that
+    // "All Files" appears before "Images" and "Text & Code" — macOS picks
+    // the first filter by default, so anything else greys out images.
+    const handlerStart = src.indexOf("ipcMain.handle('dialog:open-file'")
+    expect(handlerStart).toBeGreaterThan(-1)
+    const handlerSlice = src.slice(handlerStart, handlerStart + 800)
+    const allIdx = handlerSlice.indexOf("name: 'All Files'")
+    const imgIdx = handlerSlice.indexOf("name: 'Images'")
+    const textIdx = handlerSlice.indexOf("name: 'Text & Code'")
+    expect(allIdx).toBeGreaterThan(-1)
+    expect(allIdx).toBeLessThan(imgIdx)
+    expect(allIdx).toBeLessThan(textIdx)
+  })
+})
+
 describe('regression: v3.1.2 — modal mounts live inside LanguageProvider', () => {
   it('App.tsx puts ToolConsent + PlanApproval inside <LanguageProvider>', () => {
     const src = readFileSync(join(ROOT, 'src/App.tsx'), 'utf-8')
