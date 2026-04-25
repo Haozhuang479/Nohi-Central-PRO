@@ -455,6 +455,68 @@ describe('regression: v2.8.3 — IPC errors routed through toastIpcError', () =>
   })
 })
 
+// ─── v3.1.0: plan-mode follow-ups (queue + auto-exit + diff + badge) ─────
+
+describe('regression: v3.1.0 — PlanApproval queues by sessionId', () => {
+  it('plan-approval state is a Map keyed by sessionId', () => {
+    const src = readFileSync(join(ROOT, 'src/components/chat/plan-approval.tsx'), 'utf-8')
+    expect(src).toMatch(/useState<Map<string, PlanRequest>>/)
+    expect(src).toMatch(/queue\.size > 1/)
+    expect(src).toMatch(/queued/)
+  })
+})
+
+describe('regression: v3.1.0 — Approve auto-exits plan mode', () => {
+  it('approve handler clears session.planMode via useAIStore', () => {
+    const src = readFileSync(join(ROOT, 'src/components/chat/plan-approval.tsx'), 'utf-8')
+    expect(src).toMatch(/exitPlanModeIfActive/)
+    expect(src).toMatch(/planMode:\s*false/)
+  })
+  it('planInstructions tells the model about auto-exit', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/agent.ts'), 'utf-8')
+    expect(src).toMatch(/plan mode auto-disables/)
+  })
+})
+
+describe('regression: v3.1.0 — revised plan shows a line diff', () => {
+  it('plan-diff helper exports diffLines + hasChanges', () => {
+    const src = readFileSync(join(ROOT, 'src/lib/plan-diff.ts'), 'utf-8')
+    expect(src).toMatch(/export function diffLines/)
+    expect(src).toMatch(/export function hasChanges/)
+    expect(src).toMatch(/'same' \| 'add' \| 'del'/)
+  })
+  it('plan-approval imports the diff helper + ships PlanDiffView', () => {
+    const src = readFileSync(join(ROOT, 'src/components/chat/plan-approval.tsx'), 'utf-8')
+    expect(src).toMatch(/from '@\/lib\/plan-diff'/)
+    expect(src).toMatch(/PlanDiffView/)
+    expect(src).toMatch(/prevPlanBySessionRef/)
+  })
+})
+
+describe('regression: v3.1.0 — plan decision badges in chat history', () => {
+  it('SessionMessage type carries optional metadata.planDecision', () => {
+    const src = readFileSync(join(ROOT, 'electron/main/engine/types.ts'), 'utf-8')
+    expect(src).toMatch(/metadata\?:/)
+    expect(src).toMatch(/planDecision\?:\s*'approved' \| 'denied' \| 'revised'/)
+  })
+  it('plan-approval writes planDecision back to the latest assistant message', () => {
+    const src = readFileSync(join(ROOT, 'src/components/chat/plan-approval.tsx'), 'utf-8')
+    expect(src).toMatch(/tagLatestAssistant/)
+    expect(src).toMatch(/planDecision:\s*decision/)
+  })
+  it('message-view renders PlanDecisionBadge with three palettes', () => {
+    const src = readFileSync(join(ROOT, 'src/components/chat/message-view.tsx'), 'utf-8')
+    expect(src).toMatch(/PlanDecisionBadge/)
+    expect(src).toMatch(/Plan approved/)
+    expect(src).toMatch(/Plan revised/)
+    expect(src).toMatch(/Plan canceled/)
+  })
+  it('chat/page.tsx forwards msg.metadata into MessageView', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/chat/page.tsx'), 'utf-8')
+    expect(src).toMatch(/metadata=\{msg\.metadata\}/)
+  })
+})
+
 // ─── v3.0.0: plan mode hard gate ─────────────────────────────────────────
 // Plan mode used to be prompt-side only — the model was asked to wait for
 // "go" but nothing blocked tool dispatch. Phase O turns it into a real
@@ -537,7 +599,10 @@ describe('regression: v3.0.0 — PlanApproval modal mounted + wired', () => {
   it('PlanApproval component exists and subscribes to plan_approval_request', () => {
     const src = readFileSync(join(ROOT, 'src/components/chat/plan-approval.tsx'), 'utf-8')
     expect(src).toMatch(/plan_approval_request/)
-    expect(src).toMatch(/approvePlan\(pending\.sessionId/)
+    // v3.1.0 swapped the single `pending` state for a Map<sessionId> queue,
+    // so the call shape became `approvePlan(active.sessionId, …)`. Both
+    // forms acceptable.
+    expect(src).toMatch(/approvePlan\((?:pending|active)\.sessionId/)
     // All three decisions surface as separate buttons / code paths.
     expect(src).toMatch(/'approve'/)
     expect(src).toMatch(/'deny'/)

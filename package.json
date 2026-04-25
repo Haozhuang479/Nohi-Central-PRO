@@ -1,6 +1,6 @@
 {
   "name": "nohi-central-pro",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "Nohi Central PRO — Local AI Operations Hub",
   "main": "out/main/index.js",
   "scripts": {

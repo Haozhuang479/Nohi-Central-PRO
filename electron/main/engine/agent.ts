@@ -205,8 +205,9 @@ function buildSystemPrompt(
     ? `\n\nPLAN MODE is active. The Nohi UI will intercept your first response and show the user a modal with your plan text + the tools you intend to call. Only after the user clicks "Approve & Execute" will those tools run.
 
 - Begin your first response with a short plain-prose description of what you intend to do and why. Then make the tool calls that accomplish it — both will go into the same response and be shown together.
-- If the user clicks "Revise", they'll reply with feedback; you'll get another turn to produce a new plan + tools. The modal appears again.
+- If the user clicks "Revise", they'll reply with feedback; you'll get another turn to produce a new plan + tools. The modal appears again, with a side-by-side diff against the previous plan.
 - If the user clicks "Cancel" or dismisses, this send ends with no tools executed.
+- After the user clicks "Approve" once, plan mode auto-disables for the rest of this session — they can re-enable it from the Plan toggle if they want gating again.
 - If the task has no side effects (answering a question, summarising, explaining) and you don't need tools, just answer directly. The modal only appears when you call tools.`
     : ''
 

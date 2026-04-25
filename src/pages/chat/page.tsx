@@ -1138,6 +1138,7 @@ export default function ChatPage({ settings }: Props) {
               content={msg.content}
               tools={msgTools}
               isLastAssistant={isLastAssistant}
+              metadata={msg.metadata}
               onEdit={
                 msg.role === 'user'
                   ? (text) => handleEditMessage(text, msg.id)

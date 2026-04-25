@@ -1,8 +1,9 @@
 import { memo, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { renderMarkdown, useCodeCopyHandler, useMermaidRenderer } from '@/lib/chat-markdown'
+import { useLanguage } from '@/lib/language-context'
 import { ToolBlock, type ToolBlockState } from './tool-block'
-import type { ContentBlock, ToolUseBlock } from '../../../electron/main/engine/types'
+import type { ContentBlock, SessionMessage, ToolUseBlock } from '../../../electron/main/engine/types'
 
 interface MessageViewProps {
   role: 'user' | 'assistant'
@@ -11,13 +12,18 @@ interface MessageViewProps {
   isLastAssistant?: boolean
   onEdit?: (text: string) => void
   onRetry?: () => void
+  /** Optional message metadata. Used to render plan-decision chips above
+   *  the assistant body when the user approved/denied/revised this turn. */
+  metadata?: SessionMessage['metadata']
 }
 
-function MessageViewInner({ role, content, tools, isLastAssistant, onEdit, onRetry }: MessageViewProps) {
+function MessageViewInner({ role, content, tools, isLastAssistant, onEdit, onRetry, metadata }: MessageViewProps) {
   const isUser = role === 'user'
   const [hovered, setHovered] = useState(false)
+  const { language } = useLanguage()
   const containerRef = useRef<HTMLDivElement>(null)
   useCodeCopyHandler(containerRef)
+  const planDecision = metadata?.planDecision
 
   const textContent =
     typeof content === 'string'
@@ -69,6 +75,9 @@ function MessageViewInner({ role, content, tools, isLastAssistant, onEdit, onRet
       onMouseLeave={() => setHovered(false)}
     >
       <div className="flex-1 min-w-0" ref={containerRef}>
+        {planDecision && (
+          <PlanDecisionBadge decision={planDecision} language={language} />
+        )}
         {relevantTools.map((tool) => (
           <ToolBlock key={tool.id} tool={tool} />
         ))}
@@ -100,8 +109,36 @@ export const MessageView = memo(MessageViewInner, (prev, next) => (
   prev.tools === next.tools &&
   prev.isLastAssistant === next.isLastAssistant &&
   prev.onEdit === next.onEdit &&
-  prev.onRetry === next.onRetry
+  prev.onRetry === next.onRetry &&
+  prev.metadata?.planDecision === next.metadata?.planDecision
 ))
+
+function PlanDecisionBadge({
+  decision,
+  language,
+}: {
+  decision: NonNullable<NonNullable<SessionMessage['metadata']>['planDecision']>
+  language: 'en' | 'zh'
+}) {
+  const palette = decision === 'approved'
+    ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20'
+    : decision === 'revised'
+      ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20'
+      : 'bg-muted text-muted-foreground border-border/40'
+  const label = language === 'zh'
+    ? (decision === 'approved' ? '计划已批准' : decision === 'revised' ? '计划已修订' : '计划已取消')
+    : (decision === 'approved' ? 'Plan approved' : decision === 'revised' ? 'Plan revised' : 'Plan canceled')
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center gap-1 mb-2 px-2 py-0.5 rounded-full border text-[10px] font-medium',
+        palette,
+      )}
+    >
+      {label}
+    </span>
+  )
+}
 
 interface StreamingProps {
   text: string

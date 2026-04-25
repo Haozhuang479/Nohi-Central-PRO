@@ -97,6 +97,15 @@ export interface SessionMessage {
   role: Role
   content: string | ContentBlock[]
   timestamp: number
+  /**
+   * Optional per-message metadata. Populated by the renderer for messages
+   * that participated in a plan-mode decision so the chat history can
+   * render small chips ("Plan approved" / "Plan revised" / "Plan canceled")
+   * without needing to scan + reverse-engineer the conversation later.
+   */
+  metadata?: {
+    planDecision?: 'approved' | 'denied' | 'revised'
+  }
 }
 
 export interface Session {
