@@ -14,7 +14,7 @@ import type { NohiSettings } from '../electron/main/engine/types'
 // ── Lazy page imports ─────────────────────────────────────────────────────────
 
 const ChatLayout = lazy(() =>
-  import('@/pages/chat/layout').then((m) => ({ default: m.ChatLayout }))
+  import('@/pages/chat/layout').then((m) => ({ default: m.ChatLayout })),
 )
 
 const ChatPage = lazy(() => import('@/pages/chat/page'))
@@ -23,59 +23,63 @@ const ChatMcpPage = lazy(() => import('@/pages/chat/mcp'))
 const ChatAutomationPage = lazy(() => import('@/pages/chat/automation'))
 
 const SellerLayout = lazy(() =>
-  import('@/pages/seller/layout').then((m) => ({ default: m.SellerLayout }))
+  import('@/pages/seller/layout').then((m) => ({ default: m.SellerLayout })),
 )
 
-// Onboarding removed — users configure API keys in Settings
+// ── v3.2.0 zip seller pages — full reset of /seller/* tree to match the SaaS
+// reference zip. NOHI-only routes (automation/mcp/skills/connectors at the
+// top level) were removed; their chat-side equivalents (/chat/automation
+// etc.) remain. Backend IPC + tools untouched.
 
-// Seller pages
-const SellerHomePage = lazy(() => import('@/pages/seller/home/page'))
-const SettingsPage = lazy(() => import('@/pages/seller/settings/page'))
-const AnalyticsPage = lazy(() => import('@/pages/seller/analytics/page'))
-const SkillsPage = lazy(() => import('@/pages/seller/skills/page'))
-const McpPage = lazy(() => import('@/pages/seller/mcp/page'))
-const AutomationPage = lazy(() => import('@/pages/seller/automation/page'))
-const ConnectorsTopPage = lazy(() => import('@/pages/seller/connectors/page'))
+const SellerHomePage = lazy(() => import('@/pages/seller/page'))
+const SellerAccountPage = lazy(() => import('@/pages/seller/account/page'))
+const SellerAnalyticsPage = lazy(() => import('@/pages/seller/analytics/page'))
+const SellerBillingPage = lazy(() => import('@/pages/seller/billing/page'))
+const SellerPromotionalCreditsPage = lazy(() =>
+  import('@/pages/seller/billing/promotional-credits/page'),
+)
+const SellerCampaignsPage = lazy(() => import('@/pages/seller/campaigns/page'))
+const SellerOnboardingPage = lazy(() => import('@/pages/seller/onboarding/page'))
+const SellerSettingsPage = lazy(() => import('@/pages/seller/settings/page'))
+
+// Brand Context (zip): hub + 5 sub-pages — posts-ugc dropped (not in zip).
+const BrandContextHubPage = lazy(() => import('@/pages/seller/brand-context/page'))
+const BrandDetailsPage = lazy(() => import('@/pages/seller/brand-context/details/page'))
+const BrandStoryPage = lazy(() => import('@/pages/seller/brand-context/brand-story/page'))
+const BrandFulfillmentPage = lazy(() => import('@/pages/seller/brand-context/fulfillment/page'))
+const BrandGuardrailsPage = lazy(() => import('@/pages/seller/brand-context/guardrails/page'))
+const BrandVisualStylePage = lazy(() => import('@/pages/seller/brand-context/visual-style/page'))
 
 // Catalog
-const OwnSupplyPage = lazy(() => import('@/pages/seller/catalog/own-supply/page'))
-const NohiProductsPage = lazy(
-  () => import('@/pages/seller/catalog/nohi-database/products/page')
+const CatalogIndexPage = lazy(() => import('@/pages/seller/catalog/page'))
+const CatalogConnectFeedPage = lazy(() => import('@/pages/seller/catalog/connect-feed/page'))
+const CatalogConnectorsPage = lazy(() => import('@/pages/seller/catalog/connectors/page'))
+const CatalogOwnSupplyPage = lazy(() => import('@/pages/seller/catalog/own-supply/page'))
+const CatalogOwnSupplyImportPage = lazy(() =>
+  import('@/pages/seller/catalog/own-supply/import/page'),
 )
-const NohiBrandsPage = lazy(
-  () => import('@/pages/seller/catalog/nohi-database/brands/page')
+const CatalogProductCatalogPage = lazy(() =>
+  import('@/pages/seller/catalog/product-catalog/page'),
 )
-const NohiWebsitesPage = lazy(
-  () => import('@/pages/seller/catalog/nohi-database/websites/page')
+const NohiBrandsPage = lazy(() => import('@/pages/seller/catalog/nohi-database/brands/page'))
+const NohiBrandDetailPage = lazy(() =>
+  import('@/pages/seller/catalog/nohi-database/brands/[slug]/page'),
 )
-const NohiCategoriesPage = lazy(
-  () => import('@/pages/seller/catalog/nohi-database/categories/page')
+const NohiCategoriesPage = lazy(() =>
+  import('@/pages/seller/catalog/nohi-database/categories/page'),
 )
-
-// Brand Context
-const BrandContextPage = lazy(() => import('@/pages/seller/brand-context/page'))
-const BrandDetailsPage = lazy(() => import('@/pages/seller/brand-context/details/page'))
-const BrandGuardrailsPage = lazy(
-  () => import('@/pages/seller/brand-context/guardrails/page')
+const NohiProductsPage = lazy(() => import('@/pages/seller/catalog/nohi-database/products/page'))
+const NohiProductDetailPage = lazy(() =>
+  import('@/pages/seller/catalog/nohi-database/products/[slug]/page'),
 )
-const BrandVisualStylePage = lazy(
-  () => import('@/pages/seller/brand-context/visual-style/page')
-)
-const BrandStoryPage = lazy(
-  () => import('@/pages/seller/brand-context/brand-story/page')
-)
-const BrandPostsUgcPage = lazy(
-  () => import('@/pages/seller/brand-context/posts-ugc/page')
-)
-const BrandFulfillmentPage = lazy(
-  () => import('@/pages/seller/brand-context/fulfillment/page')
-)
+const NohiWebsitesPage = lazy(() => import('@/pages/seller/catalog/nohi-database/websites/page'))
 
 // Channels
-const ConversationalStorefrontPage = lazy(
-  () => import('@/pages/seller/channels/conversational-storefront/page')
+const ChannelsHubPage = lazy(() => import('@/pages/seller/channels/page'))
+const ChannelDetailPage = lazy(() => import('@/pages/seller/channels/[slug]/page'))
+const ConversationalStorefrontPage = lazy(() =>
+  import('@/pages/seller/channels/conversational-storefront/page'),
 )
-const GenericChannelPage = lazy(() => import('@/pages/seller/channels/[slug]/page'))
 
 // ── Full-screen loading spinner ───────────────────────────────────────────────
 
@@ -106,9 +110,6 @@ export default function App() {
       .get()
       .then((s) => {
         setSettings(s)
-        // One-shot post-upgrade notice: any plaintext API key was dropped
-        // by the safeStorage migration. Tell the user once, then clear the
-        // flag by persisting the settings without it.
         if (s.migratedPlaintextKeys) {
           toast.warning(
             'Saved API keys were cleared during a security upgrade. Please re-enter them in Settings — they will now be encrypted via your OS keychain.',
@@ -133,12 +134,10 @@ export default function App() {
     setSettings(s)
   }
 
-  // Still loading settings from IPC
   if (!settings && !loadError) {
     return <AppSpinner />
   }
 
-  // IPC error fallback
   if (loadError) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-background">
@@ -147,159 +146,128 @@ export default function App() {
     )
   }
 
-  // No onboarding gate — always allow access (users configure keys in Settings)
-
   return (
     <ErrorBoundary>
-    <CrashWatcher />
-    <LanguageProvider>
-      {/* ToolConsent + PlanApproval live INSIDE LanguageProvider because
-          PlanApproval (added in v3.0.0) calls useLanguage() for the modal
-          labels. v3.1.2 fix — they were previously outside, which crashed
-          the boundary the moment the renderer mounted. */}
-      <ToolConsent />
-      <PlanApproval />
-      <ChannelStateProvider>
-        <HashRouter>
-          <Suspense fallback={<AppSpinner />}>
-            <Routes>
-              {/* Chat — full-screen standalone AI chat */}
-              <Route
-                path="/chat"
-                element={
-                  <ChatLayout
-                    settings={settings!}
-                    onSettingsSave={handleSettingsSave}
+      <CrashWatcher />
+      <LanguageProvider>
+        <ToolConsent />
+        <PlanApproval />
+        <ChannelStateProvider>
+          <HashRouter>
+            <Suspense fallback={<AppSpinner />}>
+              <Routes>
+                {/* Chat — full-screen standalone AI chat (unchanged) */}
+                <Route
+                  path="/chat"
+                  element={
+                    <ChatLayout
+                      settings={settings!}
+                      onSettingsSave={handleSettingsSave}
+                    />
+                  }
+                >
+                  <Route index element={<ChatPage settings={settings!} />} />
+                  <Route path="skills" element={<ChatSkillsPage />} />
+                  <Route path="automation" element={<ChatAutomationPage />} />
+                  <Route
+                    path="mcp"
+                    element={
+                      <ChatMcpPage
+                        settings={settings!}
+                        onSave={handleSettingsSave}
+                      />
+                    }
                   />
-                }
-              >
-                <Route index element={<ChatPage settings={settings!} />} />
-                <Route path="skills" element={<ChatSkillsPage />} />
-                <Route path="automation" element={<ChatAutomationPage />} />
-                <Route
-                  path="mcp"
-                  element={
-                    <ChatMcpPage
-                      settings={settings!}
-                      onSave={handleSettingsSave}
-                    />
-                  }
-                />
-              </Route>
+                </Route>
 
-              {/* Seller shell — nested under SellerLayout */}
-              <Route
-                path="/seller"
-                element={
-                  <SellerLayout
-                    settings={settings!}
-                    onSettingsSave={handleSettingsSave}
+                {/* Seller shell — full v3.2.0 reset to zip routes */}
+                <Route path="/seller" element={<SellerLayout />}>
+                  <Route index element={<SellerHomePage />} />
+                  <Route path="account" element={<SellerAccountPage />} />
+                  <Route path="analytics" element={<SellerAnalyticsPage />} />
+
+                  {/* Billing */}
+                  <Route path="billing" element={<SellerBillingPage />} />
+                  <Route
+                    path="billing/promotional-credits"
+                    element={<SellerPromotionalCreditsPage />}
                   />
-                }
-              >
-                {/* Index: home dashboard */}
-                <Route index element={<SellerHomePage />} />
 
-                {/* Catalog */}
-                <Route
-                  path="catalog/own-supply"
-                  element={<OwnSupplyPage />}
-                />
-                {/* v2.8.3: the old /seller/catalog/connectors page was a
-                    dead visual duplicate of /seller/connectors with zero
-                    IPC wiring. Redirect so old bookmarks/links still work. */}
-                <Route
-                  path="catalog/connectors"
-                  element={<Navigate to="/seller/connectors" replace />}
-                />
-                <Route
-                  path="catalog/nohi-database/products"
-                  element={<NohiProductsPage />}
-                />
-                <Route
-                  path="catalog/nohi-database/brands"
-                  element={<NohiBrandsPage />}
-                />
-                <Route
-                  path="catalog/nohi-database/websites"
-                  element={<NohiWebsitesPage />}
-                />
-                <Route
-                  path="catalog/nohi-database/categories"
-                  element={<NohiCategoriesPage />}
-                />
+                  {/* Brand Context */}
+                  <Route path="brand-context" element={<BrandContextHubPage />} />
+                  <Route path="brand-context/details" element={<BrandDetailsPage />} />
+                  <Route path="brand-context/brand-story" element={<BrandStoryPage />} />
+                  <Route path="brand-context/fulfillment" element={<BrandFulfillmentPage />} />
+                  <Route path="brand-context/guardrails" element={<BrandGuardrailsPage />} />
+                  <Route path="brand-context/visual-style" element={<BrandVisualStylePage />} />
 
-                {/* Brand Context */}
-                <Route path="brand-context" element={<BrandContextPage />} />
-                <Route
-                  path="brand-context/details"
-                  element={<BrandDetailsPage />}
-                />
-                <Route
-                  path="brand-context/guardrails"
-                  element={<BrandGuardrailsPage />}
-                />
-                <Route
-                  path="brand-context/visual-style"
-                  element={<BrandVisualStylePage />}
-                />
-                <Route
-                  path="brand-context/brand-story"
-                  element={<BrandStoryPage />}
-                />
-                <Route
-                  path="brand-context/posts-ugc"
-                  element={<BrandPostsUgcPage />}
-                />
-                <Route
-                  path="brand-context/fulfillment"
-                  element={<BrandFulfillmentPage />}
-                />
+                  {/* Catalog */}
+                  <Route path="catalog" element={<CatalogIndexPage />} />
+                  <Route path="catalog/connect-feed" element={<CatalogConnectFeedPage />} />
+                  <Route path="catalog/connectors" element={<CatalogConnectorsPage />} />
+                  <Route path="catalog/own-supply" element={<CatalogOwnSupplyPage />} />
+                  <Route path="catalog/own-supply/import" element={<CatalogOwnSupplyImportPage />} />
+                  <Route path="catalog/product-catalog" element={<CatalogProductCatalogPage />} />
+                  <Route
+                    path="catalog/nohi-database/brands"
+                    element={<NohiBrandsPage />}
+                  />
+                  <Route
+                    path="catalog/nohi-database/brands/:slug"
+                    element={<NohiBrandDetailPage />}
+                  />
+                  <Route
+                    path="catalog/nohi-database/categories"
+                    element={<NohiCategoriesPage />}
+                  />
+                  <Route
+                    path="catalog/nohi-database/products"
+                    element={<NohiProductsPage />}
+                  />
+                  <Route
+                    path="catalog/nohi-database/products/:slug"
+                    element={<NohiProductDetailPage />}
+                  />
+                  <Route
+                    path="catalog/nohi-database/websites"
+                    element={<NohiWebsitesPage />}
+                  />
 
-                {/* Channels */}
-                <Route
-                  path="channels/conversational-storefront"
-                  element={<ConversationalStorefrontPage />}
-                />
-                <Route path="channels/:slug" element={<GenericChannelPage />} />
+                  {/* Campaigns */}
+                  <Route path="campaigns" element={<SellerCampaignsPage />} />
 
-                {/* Top-level pages */}
-                <Route path="analytics" element={<AnalyticsPage />} />
-                <Route path="connectors" element={<ConnectorsTopPage />} />
-                <Route path="automation" element={<AutomationPage />} />
-                <Route path="skills" element={<SkillsPage />} />
-                <Route
-                  path="mcp"
-                  element={
-                    <McpPage
-                      settings={settings!}
-                      onSave={handleSettingsSave}
-                    />
-                  }
-                />
-                <Route
-                  path="settings"
-                  element={
-                    <SettingsPage
-                      settings={settings!}
-                      onSave={handleSettingsSave}
-                    />
-                  }
-                />
-              </Route>
+                  {/* Channels — list, detail, conversational storefront */}
+                  <Route path="channels" element={<ChannelsHubPage />} />
+                  <Route
+                    path="channels/conversational-storefront"
+                    element={<ConversationalStorefrontPage />}
+                  />
+                  <Route path="channels/:slug" element={<ChannelDetailPage />} />
 
-              {/* Catch-all → chat */}
-              <Route
-                path="*"
-                element={<Navigate to="/chat" replace />}
-              />
-            </Routes>
-          </Suspense>
-        </HashRouter>
+                  {/* Onboarding (zip-only flow) */}
+                  <Route path="onboarding" element={<SellerOnboardingPage />} />
 
-        <Toaster position="bottom-right" />
-      </ChannelStateProvider>
-    </LanguageProvider>
+                  {/* Settings */}
+                  <Route path="settings" element={<SellerSettingsPage />} />
+
+                  {/* v3.2.0: Backwards-compatibility redirects for the
+                      NOHI-only seller routes that were removed in the rebuild.
+                      Old bookmarks land somewhere sensible instead of 404. */}
+                  <Route path="home" element={<Navigate to="/seller" replace />} />
+                  <Route path="automation" element={<Navigate to="/seller" replace />} />
+                  <Route path="mcp" element={<Navigate to="/seller" replace />} />
+                  <Route path="skills" element={<Navigate to="/seller" replace />} />
+                  <Route path="connectors" element={<Navigate to="/seller/catalog/connectors" replace />} />
+                </Route>
+
+                <Route path="*" element={<Navigate to="/chat" replace />} />
+              </Routes>
+            </Suspense>
+          </HashRouter>
+
+          <Toaster position="bottom-right" />
+        </ChannelStateProvider>
+      </LanguageProvider>
     </ErrorBoundary>
   )
 }

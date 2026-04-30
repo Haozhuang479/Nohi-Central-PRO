@@ -1,726 +1,711 @@
-import { cn } from "@/lib/utils"
-import { Badge } from "@/components/ui/badge"
+
+import { useState, useRef, useEffect } from "react"
+import { Link } from "react-router-dom"
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Download } from "lucide-react"
 import { useLanguage } from "@/lib/language-context"
-import { useAIStore } from "@/store/ai-store"
-import { AttributionPanel } from "@/components/seller/attribution-panel"
 import {
-  Bar,
-  BarChart,
-  Line,
-  LineChart,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  ResponsiveContainer,
-  Cell,
-  Pie,
-  PieChart,
+  Bar, BarChart, Line, LineChart,
+  XAxis, YAxis, CartesianGrid, ResponsiveContainer,
+  Cell, Pie, PieChart, Tooltip,
 } from "recharts"
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from "@/components/ui/chart"
-import { viewsData, ordersData, conversionData, projections } from "./mock-data"
-import { MetricCard } from "./metric-card"
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 
-export default function AnalyticsPage() {
-  const { language } = useLanguage()
-  const { inputTokens, outputTokens, tokensToday, costToday } = useAIStore()
+// ─── Data ────────────────────────────────────────────────────────────────────
 
-  const trafficSources = [
-    {
-      name: language === "zh" ? "对话式店面" : "Conversational Storefront",
-      value: 24,
-      color: "#171717",
-    },
-    { name: "ChatGPT ACP", value: 22, color: "#404040" },
-    { name: "ChatGPT App", value: 18, color: "#525252" },
-    { name: "Gemini", value: 14, color: "#737373" },
-    { name: "Google AI Mode", value: 12, color: "#a3a3a3" },
-    { name: "Perplexity", value: 6, color: "#d4d4d4" },
-    {
-      name: language === "zh" ? "其他" : "Others",
-      value: 4,
-      color: "#e5e5e5",
-    },
-  ]
+const months = ["Nov", "Dec", "Jan", "Feb", "Mar", "Apr"]
 
-  const listingPerformance = [
-    {
-      name: language === "zh" ? "经典棉质T恤" : "Classic Cotton Tee",
-      views: 842,
-      favourites: 56,
-      sales: 18,
-    },
-    {
-      name: language === "zh" ? "有机亚麻长裤" : "Organic Linen Pants",
-      views: 621,
-      favourites: 43,
-      sales: 14,
-    },
-    {
-      name: language === "zh" ? "宽松卫衣" : "Relaxed Fit Hoodie",
-      views: 518,
-      favourites: 38,
-      sales: 11,
-    },
-    {
-      name: language === "zh" ? "简约托特包" : "Minimal Tote Bag",
-      views: 392,
-      favourites: 27,
-      sales: 8,
-    },
-    {
-      name: language === "zh" ? "美利奴羊毛围巾" : "Merino Wool Scarf",
-      views: 284,
-      favourites: 19,
-      sales: 5,
-    },
-  ]
+const aiSessionsData = [
+  { month: "Nov", sessions: 0 },
+  { month: "Dec", sessions: 0 },
+  { month: "Jan", sessions: 0 },
+  { month: "Feb", sessions: 2 },
+  { month: "Mar", sessions: 29 },
+  { month: "Apr", sessions: 4 },
+]
 
-  const searchIntents = [
-    {
-      intent: language === "zh" ? "可持续基础款" : "sustainable basics",
-      count: 186,
-    },
-    {
-      intent: language === "zh" ? "极简时尚" : "minimalist fashion",
-      count: 142,
-    },
-    {
-      intent: language === "zh" ? "有机棉服装" : "organic cotton clothing",
-      count: 98,
-    },
-    {
-      intent: language === "zh" ? "百元以下礼物" : "gift under $100",
-      count: 87,
-    },
-    {
-      intent: language === "zh" ? "休闲办公装" : "casual workwear",
-      count: 73,
-    },
-    {
-      intent: language === "zh" ? "日常必备" : "everyday essentials",
-      count: 64,
-    },
-    {
-      intent: language === "zh" ? "环保服饰" : "eco-friendly apparel",
-      count: 52,
-    },
-    {
-      intent: language === "zh" ? "舒适家居服" : "comfortable loungewear",
-      count: 41,
-    },
-  ]
+const ordersData = [
+  { month: "Nov", orders: 0 },
+  { month: "Dec", orders: 0 },
+  { month: "Jan", orders: 0 },
+  { month: "Feb", orders: 0.1 },
+  { month: "Mar", orders: 2 },
+  { month: "Apr", orders: 0 },
+]
 
-  const customerDimensions = [
-    {
-      dimension: language === "zh" ? "年龄组" : "Age Group",
-      segments: [
-        { label: "18-24", pct: 22 },
-        { label: "25-34", pct: 41 },
-        { label: "35-44", pct: 24 },
-        { label: "45+", pct: 13 },
-      ],
-    },
-    {
-      dimension: language === "zh" ? "购买类型" : "Purchase Type",
-      segments: [
-        { label: language === "zh" ? "首次" : "First Buy", pct: 58 },
-        { label: language === "zh" ? "复购" : "Repeat", pct: 32 },
-        { label: language === "zh" ? "礼品" : "Gift", pct: 10 },
-      ],
-    },
-    {
-      dimension: language === "zh" ? "地区" : "Region",
-      segments: [
-        { label: language === "zh" ? "美西" : "US West", pct: 35 },
-        { label: language === "zh" ? "美东" : "US East", pct: 28 },
-        { label: language === "zh" ? "加拿大" : "Canada", pct: 22 },
-        { label: language === "zh" ? "其他" : "Other", pct: 15 },
-      ],
-    },
-  ]
+const conversionData = [
+  { month: "Nov", rate: 0 },
+  { month: "Dec", rate: 0 },
+  { month: "Jan", rate: 0 },
+  { month: "Feb", rate: 0 },
+  { month: "Mar", rate: 6.7 },
+  { month: "Apr", rate: 0 },
+]
 
+const trafficSources = [
+  { name: "Others",  value: 50, color: "#171717" },
+  { name: "ChatGPT", value: 44, color: "#737373" },
+  { name: "Gemini",  value: 6,  color: "#d4d4d4" },
+]
+
+const listingPerformance = [
+  { name: "Classic Cotton Tee",    views: 842, favourites: 56, sales: 18 },
+  { name: "Organic Linen Pants",   views: 621, favourites: 43, sales: 14 },
+  { name: "Relaxed Fit Hoodie",    views: 518, favourites: 38, sales: 11 },
+  { name: "Minimal Tote Bag",      views: 392, favourites: 27, sales: 8  },
+  { name: "Merino Wool Scarf",     views: 284, favourites: 19, sales: 5  },
+]
+
+// ─── Shared chart style ───────────────────────────────────────────────────────
+
+const axisProps = {
+  tick: { fontSize: 12, fill: "#737373" },
+  axisLine: false as const,
+  tickLine: false as const,
+}
+
+const gridProps = {
+  strokeDasharray: "3 3" as const,
+  vertical: false as const,
+  stroke: "#e5e5e5",
+}
+
+// ─── Stat card ────────────────────────────────────────────────────────────────
+
+function StatCard({
+  label, value, sub,
+  organic, paid,
+}: {
+  label: string
+  value: string
+  sub: string
+  organic?: string
+  paid?: string
+}) {
   return (
-    <div className="p-6 md:p-10 max-w-6xl mx-auto flex flex-col gap-10">
-      {/* Header */}
+    <div className="rounded-2xl bg-secondary/50 p-5 flex flex-col gap-1.5">
+      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">{label}</span>
+      <span className="text-3xl font-bold text-foreground tabular-nums">{value}</span>
+      <span className="text-xs text-muted-foreground">{sub}</span>
+      {(organic !== undefined || paid !== undefined) && (
+        <div className="mt-2 pt-2 border-t border-border flex flex-col gap-1">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Organic</span>
+            <span className="font-medium text-foreground tabular-nums">{organic ?? "—"}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">Nohi</span>
+            <span className="font-medium text-foreground tabular-nums">{paid ?? "—"}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Chart card ───────────────────────────────────────────────────────────────
+
+function ChartCard({ title, desc, children }: { title: string; desc: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl bg-secondary/50 p-6 flex flex-col gap-4">
       <div>
-        <h1 className="text-2xl font-semibold text-foreground tracking-tight">
-          {language === "zh" ? "数据分析" : "Analytics"}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+// ─── Empty state ──────────────────────────────────────────────────────────────
+
+function EmptyState({ language }: { language: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-24 gap-6">
+      <div className="relative size-32 flex items-center justify-center">
+        <div className="absolute inset-0 rounded-full bg-blue-50 dark:bg-blue-950/30" />
+        <svg viewBox="0 0 120 100" className="relative size-28" fill="none">
+          <circle cx="38" cy="52" r="24" stroke="#93c5fd" strokeWidth="10" fill="none" strokeDasharray="70 80" strokeLinecap="round" />
+          <circle cx="38" cy="52" r="24" stroke="#f97316" strokeWidth="10" fill="none" strokeDasharray="30 120" strokeDashoffset="-70" strokeLinecap="round" />
+          <rect x="68" y="62" width="8" height="22" rx="2" fill="#60a5fa" />
+          <rect x="80" y="48" width="8" height="36" rx="2" fill="#34d399" />
+          <rect x="92" y="38" width="8" height="46" rx="2" fill="#60a5fa" />
+          <path d="M55 42 Q72 20 95 30" stroke="#fb923c" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+          <path d="M93 26 L95 30 L91 31" stroke="#fb923c" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          <circle cx="60" cy="18" r="2" fill="#fbbf24" />
+          <circle cx="108" cy="42" r="1.5" fill="#f472b6" />
+          <circle cx="20" cy="30" r="1.5" fill="#60a5fa" />
+        </svg>
+      </div>
+      <div className="flex flex-col items-center gap-2 text-center max-w-sm">
+        <p className="text-sm font-semibold text-foreground">
+          {language === "zh" ? "欢迎使用数据分析" : "Welcome to Analytics"}
+        </p>
+        <p className="text-sm text-muted-foreground leading-relaxed">
           {language === "zh"
-            ? "了解AI智能体如何与您的商品互动。"
-            : "Insights into how AI agents interact with your listings."}
+            ? "数据分析帮助您了解广告效果，为 Campaign 决策提供依据。目前暂无直播 Campaign，准备好后即可创建第一个。"
+            : "Analytics lets you see and understand how your ads perform to make informed decisions on your campaigns. Right now, it's empty, as you don't have any live campaigns. If you're ready, create your first one right now."}
         </p>
       </div>
-
-      {/* Attribution (real data from ~/.nohi/orders/) */}
-      <AttributionPanel />
-
-      {/* AI Usage */}
-      <div>
-        <h2 className="text-base font-semibold text-foreground mb-4">
-          {language === "zh" ? "AI 用量（本次会话）" : "AI Usage (this session)"}
-        </h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { label: language === "zh" ? "输入 Token" : "Input Tokens", value: inputTokens.toLocaleString() },
-            { label: language === "zh" ? "输出 Token" : "Output Tokens", value: outputTokens.toLocaleString() },
-            { label: language === "zh" ? "今日总量" : "Today Total", value: tokensToday.toLocaleString() },
-            { label: language === "zh" ? "今日费用" : "Today Cost", value: `$${costToday.toFixed(4)}` },
-          ].map(({ label, value }) => (
-            <div key={label} className="rounded-2xl bg-secondary/50 p-5 flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</span>
-              <span className="text-2xl font-semibold text-foreground tabular-nums">{value}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* North Star Metrics */}
-      <div className="rounded-2xl bg-secondary/50 bg-gradient-to-br from-foreground/[0.02] to-foreground/[0.06] p-6 flex items-center justify-center gap-8 flex-wrap">
-        <div className="flex flex-col items-center gap-1">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            {language === "zh" ? "已选池" : "Selected Pool"}
-          </span>
-          <span className="text-3xl font-semibold text-foreground tabular-nums">
-            42
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {language === "zh" ? "个商品" : "products"}
-          </span>
-        </div>
-        <div className="w-px h-12 bg-border" />
-        <div className="flex flex-col items-center gap-1">
-          <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-            {language === "zh" ? "测试池" : "Testing Pool"}
-          </span>
-          <span className="text-3xl font-semibold text-foreground tabular-nums">
-            18
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {language === "zh" ? "个商品" : "products"}
-          </span>
-        </div>
-      </div>
-
-      {/* Top Metrics */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <MetricCard
-          label={language === "zh" ? "总浏览量" : "Total Views"}
-          value="6,960"
-          change="+34.8%"
-          positive
-        />
-        <MetricCard
-          label={language === "zh" ? "总订单数" : "Total Orders"}
-          value="155"
-          change="+10.5%"
-          positive
-        />
-        <MetricCard
-          label={language === "zh" ? "转化率" : "Conversion Rate"}
-          value="3.2%"
-          change="+0.8%"
-          positive
-        />
-        <MetricCard
-          label={language === "zh" ? "平均订单金额" : "Avg Order Value"}
-          value="$82.40"
-          change="+$4.20"
-          positive
-        />
-      </div>
-
-      {/* Charts Row: Views + Orders */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Views Chart */}
-        <div className="rounded-2xl bg-secondary/50 bg-popover p-5 flex flex-col gap-4">
-          <div>
-            <h3 className="text-sm font-medium text-foreground">
-              {language === "zh" ? "浏览量" : "Views"}
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              {language === "zh"
-                ? "智能体购物者查看您商品的总次数。"
-                : "Total times agent shoppers viewed your listings."}
-            </p>
-          </div>
-          <ChartContainer
-            config={{
-              views: {
-                label: language === "zh" ? "浏览量" : "Views",
-                color: "#171717",
-              },
-            }}
-            className="h-[200px]"
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={viewsData}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#e5e5e5"
-                />
-                <XAxis
-                  dataKey="month"
-                  tick={{ fontSize: 12 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 12 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Bar dataKey="views" fill="#171717" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </ChartContainer>
-        </div>
-
-        {/* Orders Chart */}
-        <div className="rounded-2xl bg-secondary/50 bg-popover p-5 flex flex-col gap-4">
-          <div>
-            <h3 className="text-sm font-medium text-foreground">
-              {language === "zh" ? "订单数" : "Orders"}
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              {language === "zh"
-                ? "下单的总数量。"
-                : "Total number of orders placed."}
-            </p>
-          </div>
-          <ChartContainer
-            config={{
-              orders: {
-                label: language === "zh" ? "订单" : "Orders",
-                color: "#171717",
-              },
-            }}
-            className="h-[200px]"
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={ordersData}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#e5e5e5"
-                />
-                <XAxis
-                  dataKey="month"
-                  tick={{ fontSize: 12 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 12 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Line
-                  type="monotone"
-                  dataKey="orders"
-                  stroke="#171717"
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </ChartContainer>
-        </div>
-      </div>
-
-      {/* Conversion + Traffic Sources */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Conversion Rate */}
-        <div className="rounded-2xl bg-secondary/50 bg-popover p-5 flex flex-col gap-4">
-          <div>
-            <h3 className="text-sm font-medium text-foreground">
-              {language === "zh" ? "转化率" : "Conversion Rate"}
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              {language === "zh"
-                ? "完成购买的智能体购物者百分比。"
-                : "Percentage of agent shoppers who made a purchase."}
-            </p>
-          </div>
-          <ChartContainer
-            config={{
-              rate: {
-                label: language === "zh" ? "比率 %" : "Rate %",
-                color: "#171717",
-              },
-            }}
-            className="h-[200px]"
-          >
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={conversionData}>
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#e5e5e5"
-                />
-                <XAxis
-                  dataKey="month"
-                  tick={{ fontSize: 12 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fontSize: 12 }}
-                  axisLine={false}
-                  tickLine={false}
-                  domain={[0, 5]}
-                />
-                <ChartTooltip content={<ChartTooltipContent />} />
-                <Line
-                  type="monotone"
-                  dataKey="rate"
-                  stroke="#171717"
-                  strokeWidth={2}
-                  dot={{ r: 3 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          </ChartContainer>
-        </div>
-
-        {/* Traffic Sources */}
-        <div className="rounded-2xl bg-secondary/50 bg-popover p-5 flex flex-col gap-4">
-          <div>
-            <h3 className="text-sm font-medium text-foreground">
-              {language === "zh" ? "流量来源" : "Traffic Sources"}
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              {language === "zh"
-                ? "您的智能体购物者来自哪里。"
-                : "Where your agent shoppers come from."}
-            </p>
-          </div>
-          <div className="flex items-center gap-6">
-            <ChartContainer
-              config={{
-                "Conversational Storefront": {
-                  label:
-                    language === "zh"
-                      ? "对话式店面"
-                      : "Conversational Storefront",
-                  color: "#171717",
-                },
-                "ChatGPT ACP": { label: "ChatGPT ACP", color: "#404040" },
-                "ChatGPT App": { label: "ChatGPT App", color: "#525252" },
-                Gemini: { label: "Gemini", color: "#737373" },
-                "Google AI Mode": {
-                  label: "Google AI Mode",
-                  color: "#a3a3a3",
-                },
-                Perplexity: { label: "Perplexity", color: "#d4d4d4" },
-                Others: {
-                  label: language === "zh" ? "其他" : "Others",
-                  color: "#e5e5e5",
-                },
-              }}
-              className="h-[180px] w-[180px] shrink-0"
-            >
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={trafficSources}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={45}
-                    outerRadius={75}
-                    paddingAngle={2}
-                    dataKey="value"
-                  >
-                    {trafficSources.map((entry) => (
-                      <Cell key={entry.name} fill={entry.color} />
-                    ))}
-                  </Pie>
-                  <ChartTooltip
-                    content={({ active, payload }) => {
-                      if (!active || !payload?.length) return null
-                      const data = payload[0]?.payload as
-                        | { name: string; value: number; color: string }
-                        | undefined
-                      if (!data) return null
-                      return (
-                        <div className="rounded-lg bg-background px-3 py-2 text-xs border border-border">
-                          <div className="flex items-center gap-2">
-                            <div
-                              className="size-2.5 rounded-full"
-                              style={{ backgroundColor: data.color }}
-                            />
-                            <span className="text-muted-foreground">
-                              {data.name}
-                            </span>
-                            <span className="font-medium text-foreground tabular-nums ml-auto">
-                              {data.value}%
-                            </span>
-                          </div>
-                        </div>
-                      )
-                    }}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </ChartContainer>
-            <div className="flex flex-col gap-2">
-              {trafficSources.map((source) => (
-                <div key={source.name} className="flex items-center gap-2">
-                  <div
-                    className="size-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: source.color }}
-                  />
-                  <span className="text-xs text-muted-foreground">
-                    {source.name}
-                  </span>
-                  <span className="text-xs font-medium text-foreground ml-auto tabular-nums">
-                    {source.value}%
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Listing Performance */}
-      <div className="rounded-2xl bg-secondary/50 bg-popover overflow-hidden">
-        <div className="p-5 border-b border-border">
-          <h3 className="text-sm font-medium text-foreground">
-            {language === "zh" ? "商品表现" : "Listing Performance"}
-          </h3>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {language === "zh"
-              ? "哪些商品获得最多浏览、收藏和销量。"
-              : "Which products get the most views, favourites, and sales."}
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-border">
-                <th className="text-left px-5 py-3 text-xs font-medium text-muted-foreground">
-                  {language === "zh" ? "商品" : "Product"}
-                </th>
-                <th className="text-right px-5 py-3 text-xs font-medium text-muted-foreground">
-                  {language === "zh" ? "浏览" : "Views"}
-                </th>
-                <th className="text-right px-5 py-3 text-xs font-medium text-muted-foreground">
-                  {language === "zh" ? "收藏" : "Favourites"}
-                </th>
-                <th className="text-right px-5 py-3 text-xs font-medium text-muted-foreground">
-                  {language === "zh" ? "销量" : "Sales"}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {listingPerformance.map((item) => (
-                <tr
-                  key={item.name}
-                  className="border-b border-border last:border-0 hover:bg-secondary/30 transition-colors"
-                >
-                  <td className="px-5 py-3.5 font-medium text-foreground">
-                    {item.name}
-                  </td>
-                  <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">
-                    {item.views.toLocaleString()}
-                  </td>
-                  <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">
-                    {item.favourites}
-                  </td>
-                  <td className="px-5 py-3.5 text-right tabular-nums text-muted-foreground">
-                    {item.sales}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Search Intent + Customer Distribution */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Search Intent */}
-        <div className="rounded-2xl bg-secondary/50 bg-popover p-5 flex flex-col gap-4">
-          <div>
-            <h3 className="text-sm font-medium text-foreground">
-              {language === "zh" ? "搜索意图" : "Search Intent"}
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              {language === "zh"
-                ? "购物者使用什么意图找到您的商品。"
-                : "What intents shoppers used to find your listings."}
-            </p>
-          </div>
-          <div className="flex flex-col gap-2">
-            {searchIntents.map((item) => {
-              const maxCount = searchIntents[0].count
-              const barWidth = (item.count / maxCount) * 100
-              return (
-                <div key={item.intent} className="flex items-center gap-3">
-                  <span className="text-xs text-foreground w-40 truncate shrink-0">
-                    {item.intent}
-                  </span>
-                  <div className="flex-1 h-5 bg-secondary rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-foreground/80 rounded-full transition-all"
-                      style={{ width: `${barWidth}%` }}
-                    />
-                  </div>
-                  <span className="text-xs text-muted-foreground tabular-nums w-8 text-right shrink-0">
-                    {item.count}
-                  </span>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-
-        {/* Customer Distribution */}
-        <div className="rounded-2xl bg-secondary/50 bg-popover p-5 flex flex-col gap-5">
-          <div>
-            <h3 className="text-sm font-medium text-foreground">
-              {language === "zh" ? "客户分布" : "Customer Distribution"}
-            </h3>
-            <p className="text-xs text-muted-foreground">
-              {language === "zh"
-                ? "您客户群的多维度细分。"
-                : "Multi-dimensional breakdown of your customer base."}
-            </p>
-          </div>
-          {customerDimensions.map((dim) => (
-            <div key={dim.dimension} className="flex flex-col gap-2">
-              <span className="text-xs font-medium text-muted-foreground">
-                {dim.dimension}
-              </span>
-              <div className="flex h-6 rounded-full overflow-hidden">
-                {dim.segments.map((seg, idx) => {
-                  const shades = ["#171717", "#525252", "#a3a3a3", "#d4d4d4"]
-                  return (
-                    <div
-                      key={seg.label}
-                      className="h-full flex items-center justify-center text-[10px] font-medium transition-all"
-                      style={{
-                        width: `${seg.pct}%`,
-                        backgroundColor: shades[idx % shades.length],
-                        color: idx < 2 ? "#fff" : "#171717",
-                      }}
-                      title={`${seg.label}: ${seg.pct}%`}
-                    >
-                      {seg.pct > 15 ? `${seg.label}` : ""}
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="flex flex-wrap gap-x-4 gap-y-1">
-                {dim.segments.map((seg, idx) => {
-                  const shades = ["#171717", "#525252", "#a3a3a3", "#d4d4d4"]
-                  return (
-                    <div key={seg.label} className="flex items-center gap-1.5">
-                      <div
-                        className="size-2 rounded-full"
-                        style={{ backgroundColor: shades[idx % shades.length] }}
-                      />
-                      <span className="text-[11px] text-muted-foreground">
-                        {seg.label} {seg.pct}%
-                      </span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Forecasting */}
-      <div className="rounded-2xl bg-secondary/50 bg-popover p-5 flex flex-col gap-4">
-        <div>
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-medium text-foreground">
-              {language === "zh" ? "预测浏览量" : "Projected Views"}
-            </h3>
-            <Badge variant="secondary" className="text-xs">
-              {language === "zh" ? "预测" : "Forecast"}
-            </Badge>
-          </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {language === "zh"
-              ? "基于当前增长轨迹的预估浏览量。"
-              : "Estimated views based on current growth trajectory."}
-          </p>
-        </div>
-        <ChartContainer
-          config={{
-            views: {
-              label: language === "zh" ? "实际" : "Actual",
-              color: "#171717",
-            },
-            projected: {
-              label: language === "zh" ? "预测" : "Projected",
-              color: "#a3a3a3",
-            },
-          }}
-          className="h-[200px]"
-        >
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart
-              data={[
-                ...viewsData,
-                ...projections.map((p) => ({
-                  month: p.month,
-                  views: null,
-                  projected: p.projected,
-                })),
-              ]}
-            >
-              <CartesianGrid
-                strokeDasharray="3 3"
-                vertical={false}
-                stroke="#e5e5e5"
-              />
-              <XAxis
-                dataKey="month"
-                tick={{ fontSize: 12 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                tick={{ fontSize: 12 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <ChartTooltip content={<ChartTooltipContent />} />
-              <Line
-                type="monotone"
-                dataKey="views"
-                stroke="#171717"
-                strokeWidth={2}
-                dot={{ r: 3 }}
-                connectNulls={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="projected"
-                stroke="#a3a3a3"
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                dot={{ r: 3 }}
-                connectNulls={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </ChartContainer>
+      <div className="flex items-center gap-3">
+        <Button variant="outline" className="rounded-full px-6">
+          {language === "zh" ? "了解更多" : "Learn more about Analytics"}
+        </Button>
+        <Button asChild className="rounded-full px-6 bg-blue-600 hover:bg-blue-700 text-white">
+          <Link to="/seller/campaigns">
+            {language === "zh" ? "查看 Campaign" : "View campaigns"}
+          </Link>
+        </Button>
       </div>
     </div>
   )
 }
 
+// ─── Overview Tab ───────────────────────────────────────────────────────���─────
+
+function OverviewTab({ language }: { language: string }) {
+  return (
+    <div className="flex flex-col gap-6">
+      {/* 4 stat cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Total Orders"    value="2"    sub="No prior data" organic="1"    paid="1"    />
+        <StatCard label="AI Sessions"     value="34"   sub="No prior data" organic="22"   paid="12"   />
+        <StatCard label="Total Clicks"    value="3"    sub="No prior data" organic="2"    paid="1"    />
+        <StatCard label="Conversion Rate" value="5.9%" sub="No prior data" organic="6.2%" paid="5.3%" />
+      </div>
+
+      {/* AI Sessions + Orders */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <ChartCard
+          title="AI Sessions"
+          desc={language === "zh" ? "每月 AI 推荐访问量" : "Monthly AI-referred visits to your store"}
+        >
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={aiSessionsData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="month" {...axisProps} />
+              <YAxis {...axisProps} ticks={[0, 8, 16, 24, 32]} />
+              <Tooltip
+                contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e5e5" }}
+                cursor={{ fill: "rgba(0,0,0,0.04)" }}
+              />
+              <Bar dataKey="sessions" fill="#171717" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard
+          title="Orders"
+          desc={language === "zh" ? "总订单数量" : "Total number of orders placed."}
+        >
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={ordersData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="month" {...axisProps} />
+              <YAxis {...axisProps} ticks={[0, 0.5, 1, 1.5, 2]} />
+              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e5e5" }} />
+              <Line type="monotone" dataKey="orders" stroke="#171717" strokeWidth={2} dot={{ r: 4, fill: "#171717", stroke: "#fff", strokeWidth: 2 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </div>
+
+      {/* Conversion Rate + Traffic Sources */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <ChartCard
+          title="Conversion Rate"
+          desc={language === "zh" ? "完成购买的购物者百分比。" : "Percentage of agent shoppers who made a purchase."}
+        >
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={conversionData} margin={{ top: 4, right: 0, left: -20, bottom: 0 }}>
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="month" {...axisProps} />
+              <YAxis {...axisProps} ticks={[0, 2, 4, 6, 8]} />
+              <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e5e5e5" }} />
+              <Line type="monotone" dataKey="rate" stroke="#171717" strokeWidth={2} dot={{ r: 4, fill: "#171717", stroke: "#fff", strokeWidth: 2 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </ChartCard>
+
+        <ChartCard
+          title="Traffic Sources"
+          desc={language === "zh" ? "揭示您的智能体渠道构成。" : "Reveal your agentic channel composition"}
+        >
+          <div className="flex items-center gap-8">
+            <ResponsiveContainer width={180} height={180}>
+              <PieChart>
+                <Pie
+                  data={trafficSources}
+                  cx="50%" cy="50%"
+                  innerRadius={55} outerRadius={82}
+                  paddingAngle={2}
+                  dataKey="value"
+                  startAngle={90} endAngle={-270}
+                >
+                  {trafficSources.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Pie>
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="flex flex-col gap-3">
+              {trafficSources.map((s) => (
+                <div key={s.name} className="flex items-center gap-2.5 min-w-[120px]">
+                  <span className="size-3 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                  <span className="text-sm text-foreground w-20">{s.name}</span>
+                  <span className="text-sm font-semibold text-foreground tabular-nums">{s.value}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </ChartCard>
+      </div>
+
+      {/* Revenue card */}
+      <div className="rounded-2xl bg-secondary/50 p-6 flex flex-col gap-2">
+        <h3 className="text-sm font-semibold text-foreground">
+          {language === "zh" ? "Nohi 收入" : "Nohi Revenue"}
+        </h3>
+        <span className="text-4xl font-bold text-foreground tabular-nums">$0</span>
+
+      </div>
+
+      {/* Listing performance */}
+      <div className="rounded-2xl bg-secondary/50 overflow-hidden">
+        <div className="px-6 py-4 border-b border-border">
+          <h3 className="text-sm font-semibold text-foreground">
+            {language === "zh" ? "商品表现" : "Listing Performance"}
+          </h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {language === "zh" ? "浏览、收藏和销量最多的商品。" : "Which products get the most views, favourites, and sales."}
+          </p>
+        </div>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border">
+              {["Product", "Views", "Favourites", "Sales"].map((h) => (
+                <th key={h} className={cn("px-6 py-3 text-xs font-medium text-muted-foreground", h !== "Product" && "text-right")}>
+                  {language === "zh" ? { Product: "商品", Views: "浏览", Favourites: "收藏", Sales: "销量" }[h] : h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {listingPerformance.map((item) => (
+              <tr key={item.name} className="border-b border-border last:border-0 hover:bg-black/5 transition-colors">
+                <td className="px-6 py-3.5 font-medium text-foreground">{item.name}</td>
+                <td className="px-6 py-3.5 text-right tabular-nums text-muted-foreground">{item.views.toLocaleString()}</td>
+                <td className="px-6 py-3.5 text-right tabular-nums text-muted-foreground">{item.favourites}</td>
+                <td className="px-6 py-3.5 text-right tabular-nums text-muted-foreground">{item.sales}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// ─── Date Range Picker ────────────────────────────────────────────────────────
+
+type DatePresetMode = "today" | "yesterday" | "last" | "period" | "bfcm" | "quarters" | "custom"
+
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"]
+const DAY_HEADERS = ["Su","Mo","Tu","We","Th","Fr","Sa"]
+
+function formatDateLabel(d: Date) {
+  return `${MONTH_NAMES[d.getMonth()].slice(0,3)} ${d.getDate()}, ${d.getFullYear()}`
+}
+
+function isSameDay(a: Date, b: Date) {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
+}
+
+function isBetween(d: Date, start: Date, end: Date) {
+  return d >= start && d <= end
+}
+
+function addMonths(date: Date, n: number) {
+  const d = new Date(date)
+  d.setMonth(d.getMonth() + n)
+  d.setDate(1)
+  return d
+}
+
+function calendarDays(year: number, month: number) {
+  const first = new Date(year, month, 1).getDay()
+  const days: (number | null)[] = Array(first).fill(null)
+  const total = new Date(year, month + 1, 0).getDate()
+  for (let i = 1; i <= total; i++) days.push(i)
+  return days
+}
+
+function getLastNRange(n: number, unit: "Days" | "Weeks" | "Months", includeToday: boolean): [Date, Date] {
+  const end = new Date(); if (!includeToday) { end.setDate(end.getDate() - 1) }
+  const start = new Date(end)
+  if (unit === "Days")   start.setDate(start.getDate() - n + (includeToday ? 1 : 0))
+  if (unit === "Weeks")  start.setDate(start.getDate() - n * 7 + (includeToday ? 1 : 0))
+  if (unit === "Months") start.setMonth(start.getMonth() - n); start.setDate(includeToday ? start.getDate() : start.getDate() + 1)
+  return [start, end]
+}
+
+function getQuarterRange(label: string): [Date, Date] {
+  const [q, y] = [label.slice(0,2), parseInt(label.slice(3))]
+  const qMap: Record<string,number[]> = { Q1:[0,2], Q2:[3,5], Q3:[6,8], Q4:[9,11] }
+  const [sm, em] = qMap[q] ?? [0, 2]
+  return [new Date(y, sm, 1), new Date(y, em + 1, 0)]
+}
+
+function getBFCMRange(year: number): [Date, Date] {
+  // Black Friday = 4th Thursday of November
+  const nov1 = new Date(year, 10, 1)
+  const day1 = nov1.getDay()
+  const firstThur = day1 <= 4 ? 5 - day1 : 12 - day1
+  const bfDay = firstThur + 21
+  const bf = new Date(year, 10, bfDay)
+  const cm = new Date(year, 10, bfDay + 3)
+  return [bf, cm]
+}
+
+interface DateRangePickerProps {
+  label: string
+  onApply: (label: string) => void
+}
+
+function DateRangePicker({ label, onApply }: DateRangePickerProps) {
+  const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState<DatePresetMode>("last")
+  const [subMode, setSubMode] = useState<string | null>(null)
+
+  // "Last N" state
+  const [lastN, setLastN] = useState(30)
+  const [lastUnit, setLastUnit] = useState<"Days"|"Weeks"|"Months">("Days")
+  const [includeToday, setIncludeToday] = useState(true)
+
+  // Calendar navigation
+  const today = new Date()
+  const [leftMonth, setLeftMonth] = useState(new Date(today.getFullYear(), today.getMonth() - 1, 1))
+
+  // Selected range
+  const [rangeStart, setRangeStart] = useState<Date | null>(null)
+  const [rangeEnd, setRangeEnd] = useState<Date | null>(null)
+  const [hovered, setHovered] = useState<Date | null>(null)
+  const [appliedLabel, setAppliedLabel] = useState(label)
+
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [])
+
+  const rightMonth = addMonths(leftMonth, 1)
+
+  function applyPreset(start: Date, end: Date, displayLabel: string) {
+    setRangeStart(start); setRangeEnd(end)
+    setAppliedLabel(displayLabel); onApply(displayLabel); setOpen(false)
+  }
+
+  function handleDayClick(day: Date) {
+    if (!rangeStart || (rangeStart && rangeEnd)) {
+      setRangeStart(day); setRangeEnd(null)
+    } else {
+      if (day < rangeStart) { setRangeStart(day); setRangeEnd(rangeStart) }
+      else { setRangeEnd(day) }
+    }
+  }
+
+  function handleApply() {
+    if (mode === "last") {
+      const [s, e] = getLastNRange(lastN, lastUnit, includeToday)
+      applyPreset(s, e, `Last ${lastN} ${lastUnit}`)
+    } else if (rangeStart && rangeEnd) {
+      applyPreset(rangeStart, rangeEnd, `${formatDateLabel(rangeStart)} – ${formatDateLabel(rangeEnd)}`)
+    }
+  }
+
+  function renderCalendar(year: number, month: number) {
+    const days = calendarDays(year, month)
+    const effectiveEnd = rangeEnd ?? hovered
+    return (
+      <div className="flex flex-col gap-2 min-w-[220px]">
+        <div className="text-center font-semibold text-sm">{MONTH_NAMES[month]} {year}</div>
+        <div className="grid grid-cols-7 gap-y-1">
+          {DAY_HEADERS.map(h => <div key={h} className="text-center text-[11px] text-muted-foreground py-1">{h}</div>)}
+          {days.map((d, i) => {
+            if (d === null) return <div key={`e-${i}`} />
+            const date = new Date(year, month, d)
+            const isStart = rangeStart && isSameDay(date, rangeStart)
+            const isEnd   = rangeEnd   && isSameDay(date, rangeEnd)
+            const inRange = rangeStart && effectiveEnd && !isStart && !isEnd && isBetween(date, rangeStart, effectiveEnd)
+            const isToday = isSameDay(date, today)
+            const isFuture = date > today
+            return (
+              <button
+                key={d}
+                type="button"
+                disabled={isFuture}
+                onClick={() => handleDayClick(date)}
+                onMouseEnter={() => { if (rangeStart && !rangeEnd) setHovered(date) }}
+                onMouseLeave={() => setHovered(null)}
+                className={cn(
+                  "h-8 w-8 mx-auto flex items-center justify-center text-xs rounded-full transition-colors",
+                  isFuture && "text-muted-foreground/30 cursor-not-allowed",
+                  !isFuture && "hover:bg-secondary",
+                  (isStart || isEnd) && "bg-foreground text-background font-semibold",
+                  inRange && "bg-secondary rounded-none",
+                  isToday && !isStart && !isEnd && "font-bold"
+                )}
+              >
+                {d}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  const QUARTER_OPTIONS = ["Q1 2026","Q4 2025","Q3 2025","Q2 2025"]
+  const BFCM_OPTIONS    = ["BFCM 2025","BFCM 2024","BFCM 2023","BFCM 2022"]
+  const PERIOD_OPTIONS  = ["Week to date","Month to date","Quarter to date","Year to date"]
+
+  function renderLeftPanel() {
+    if (subMode === "bfcm") return (
+      <div className="flex flex-col w-44">
+        <button type="button" onClick={() => setSubMode(null)} className="flex items-center gap-1 text-sm font-semibold mb-3 hover:text-foreground">
+          <ChevronLeft className="size-4" /> BFCM
+        </button>
+        {BFCM_OPTIONS.map(opt => {
+          const year = parseInt(opt.split(" ")[1])
+          return (
+            <button key={opt} type="button" onClick={() => { const [s,e] = getBFCMRange(year); applyPreset(s,e,opt) }}
+              className="text-left px-3 py-2 rounded-lg text-sm hover:bg-secondary">
+              {opt}
+            </button>
+          )
+        })}
+      </div>
+    )
+    if (subMode === "quarters") return (
+      <div className="flex flex-col w-44">
+        <button type="button" onClick={() => setSubMode(null)} className="flex items-center gap-1 text-sm font-semibold mb-3 hover:text-foreground">
+          <ChevronLeft className="size-4" /> Quarters
+        </button>
+        {QUARTER_OPTIONS.map(opt => (
+          <button key={opt} type="button" onClick={() => { const [s,e] = getQuarterRange(opt); applyPreset(s,e,opt) }}
+            className="text-left px-3 py-2 rounded-lg text-sm hover:bg-secondary">
+            {opt}
+          </button>
+        ))}
+      </div>
+    )
+    if (subMode === "period") return (
+      <div className="flex flex-col w-44">
+        <button type="button" onClick={() => setSubMode(null)} className="flex items-center gap-1 text-sm font-semibold mb-3 hover:text-foreground">
+          <ChevronLeft className="size-4" /> Period to date
+        </button>
+        {PERIOD_OPTIONS.map(opt => {
+          function getRange(): [Date,Date] {
+            const now = new Date()
+            if (opt === "Week to date")    { const s = new Date(now); s.setDate(now.getDate()-now.getDay()); return [s,now] }
+            if (opt === "Month to date")   { return [new Date(now.getFullYear(),now.getMonth(),1), now] }
+            if (opt === "Quarter to date") { const qm = Math.floor(now.getMonth()/3)*3; return [new Date(now.getFullYear(),qm,1),now] }
+            return [new Date(now.getFullYear(),0,1), now]
+          }
+          return (
+            <button key={opt} type="button" onClick={() => { const [s,e] = getRange(); applyPreset(s,e,opt) }}
+              className="text-left px-3 py-2 rounded-lg text-sm hover:bg-secondary">
+              {opt}
+            </button>
+          )
+        })}
+      </div>
+    )
+
+    const presets: { id: DatePresetMode; label: string; sub?: string }[] = [
+      { id: "today",     label: "Today" },
+      { id: "yesterday", label: "Yesterday" },
+      { id: "last",      label: "Last" },
+      { id: "period",    label: "Period to date", sub: "period" },
+      { id: "bfcm",      label: "Black Friday Cyber Monday", sub: "bfcm" },
+      { id: "quarters",  label: "Quarters", sub: "quarters" },
+      { id: "custom",    label: "Custom range" },
+    ]
+    return (
+      <div className="flex flex-col w-44">
+        {presets.map(p => (
+          <button key={p.id} type="button"
+            onClick={() => {
+              if (p.sub) { setSubMode(p.sub); setMode(p.id) }
+              else if (p.id === "today") {
+                applyPreset(today, today, "Today")
+              } else if (p.id === "yesterday") {
+                const y = new Date(today); y.setDate(today.getDate()-1); applyPreset(y,y,"Yesterday")
+              } else {
+                setMode(p.id); setSubMode(null)
+              }
+            }}
+            className={cn(
+              "flex items-center justify-between text-left px-3 py-2 rounded-lg text-sm",
+              mode === p.id && !subMode ? "bg-secondary font-medium" : "hover:bg-secondary"
+            )}
+          >
+            {p.label}
+            {p.sub && <ChevronRight className="size-3.5 text-muted-foreground" />}
+          </button>
+        ))}
+      </div>
+    )
+  }
+
+  function renderRightPanel() {
+    if (mode === "last") return (
+      <div className="flex flex-col gap-4 flex-1">
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-muted-foreground">Last</span>
+          <input type="number" min={1} max={365} value={lastN}
+            onChange={e => setLastN(Math.max(1, parseInt(e.target.value) || 1))}
+            className="w-20 border border-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring bg-background" />
+          <select value={lastUnit} onChange={e => setLastUnit(e.target.value as any)}
+            className="border border-border rounded-lg px-3 py-1.5 text-sm bg-background focus:outline-none appearance-none pr-8">
+            {["Days","Weeks","Months"].map(u => <option key={u}>{u}</option>)}
+          </select>
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input type="checkbox" checked={includeToday} onChange={e => setIncludeToday(e.target.checked)}
+              className="rounded accent-foreground" />
+            Include today
+          </label>
+        </div>
+        <div className="flex gap-8">
+          {renderCalendar(leftMonth.getFullYear(), leftMonth.getMonth())}
+          {renderCalendar(rightMonth.getFullYear(), rightMonth.getMonth())}
+        </div>
+        {rangeStart && rangeEnd && (
+          <div className="text-sm text-muted-foreground">{formatDateLabel(rangeStart)} – {formatDateLabel(rangeEnd)}</div>
+        )}
+      </div>
+    )
+    return (
+      <div className="flex flex-col gap-4 flex-1">
+        <div className="flex items-center gap-3">
+          <input placeholder="YYYY-MM-DD" value={rangeStart ? rangeStart.toISOString().slice(0,10) : ""}
+            readOnly className="flex-1 border border-border rounded-lg px-3 py-1.5 text-sm bg-background focus:outline-none" />
+          <span className="text-muted-foreground">→</span>
+          <input placeholder="YYYY-MM-DD" value={rangeEnd ? rangeEnd.toISOString().slice(0,10) : ""}
+            readOnly className="flex-1 border border-border rounded-lg px-3 py-1.5 text-sm bg-background focus:outline-none" />
+        </div>
+        <div className="flex items-center gap-4">
+          <button type="button" onClick={() => setLeftMonth(prev => addMonths(prev, -1))} className="p-1 hover:bg-secondary rounded-lg"><ChevronLeft className="size-4" /></button>
+          <div className="flex gap-8 flex-1 justify-center">
+            {renderCalendar(leftMonth.getFullYear(), leftMonth.getMonth())}
+            {renderCalendar(rightMonth.getFullYear(), rightMonth.getMonth())}
+          </div>
+          <button type="button" onClick={() => setLeftMonth(prev => addMonths(prev, 1))} className="p-1 hover:bg-secondary rounded-lg"><ChevronRight className="size-4" /></button>
+        </div>
+        {rangeStart && rangeEnd && (
+          <div className="text-sm text-muted-foreground">{formatDateLabel(rangeStart)} – {formatDateLabel(rangeEnd)}</div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 rounded-xl border border-border bg-background px-3 py-2 text-sm font-medium hover:bg-secondary transition-colors"
+      >
+        <CalendarDays className="size-4 text-muted-foreground" />
+        {appliedLabel}
+        <ChevronDown className={cn("size-4 text-muted-foreground transition-transform", open && "rotate-180")} />
+      </button>
+
+      {open && (
+        <div className="absolute right-0 top-full mt-2 z-50 bg-background border border-border rounded-2xl shadow-xl p-5 flex flex-col gap-4 min-w-[680px]">
+          <div className="flex gap-6">
+            {renderLeftPanel()}
+            <div className="w-px bg-border" />
+            {renderRightPanel()}
+          </div>
+          <div className="flex items-center justify-between border-t border-border pt-4">
+            <span className="text-sm text-muted-foreground">
+              {rangeStart && rangeEnd
+                ? `${formatDateLabel(rangeStart)} – ${formatDateLabel(rangeEnd)}`
+                : "Select a date range"}
+            </span>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setOpen(false)}
+                className="px-4 py-2 rounded-xl border border-border text-sm hover:bg-secondary">Cancel</button>
+              <button type="button" onClick={handleApply}
+                className="px-4 py-2 rounded-xl bg-foreground text-background text-sm font-medium hover:opacity-90">Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
+type Tab = "overview"
+
+export default function AnalyticsPage() {
+  const { language } = useLanguage()
+  const [activeTab, setActiveTab] = useState<Tab>("overview")
+  const [dateLabel, setDateLabel] = useState("Last 30 days")
+  const tabs: { id: Tab; label: string; labelZh: string }[] = [
+    { id: "overview", label: "Overview", labelZh: "概览" },
+  ]
+
+  return (
+    <div className="flex flex-col min-h-full">
+      {/* ── Page header ── */}
+      <div className="px-6 pt-6 pb-0 flex items-center justify-between gap-4">
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+          {language === "zh" ? "数据分析" : "Analytics"}
+        </h1>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="rounded-xl gap-2"
+            onClick={() => window.print()}
+          >
+            <Download className="size-4" />
+            {language === "zh" ? "导出报告" : "Export report"}
+          </Button>
+          <DateRangePicker label={dateLabel} onApply={setDateLabel} />
+        </div>
+      </div>
+
+      {/* ── Tab bar ── */}
+      <div className="flex items-center gap-0 border-b border-border mt-4 px-6">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={cn(
+              "px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
+              activeTab === tab.id
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {language === "zh" ? tab.labelZh : tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab content ── */}
+      <div className="flex flex-col gap-5 px-6 py-6 max-w-6xl w-full mx-auto">
+        {activeTab === "overview" && <OverviewTab language={language} />}
+      </div>
+    </div>
+  )
+}

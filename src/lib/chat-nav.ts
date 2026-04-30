@@ -1,13 +1,11 @@
 // Single source of truth for chat-surface navigation entries.
 //
 // Before v2.8.2 the chat layout sidebar and the in-composer "+ Add" menu
-// each hard-coded their own route table — layout pointed Skills at
-// /chat/skills and Connectors at /seller/connectors, while the + Add menu
-// pointed Skills at /seller/settings and Connectors at the now-dead
-// /seller/catalog/connectors. Two lists, two answers.
+// each hard-coded their own route table; both now import from here.
 //
-// Both menus now import from here. When we rename or redirect a page
-// we only have to touch this file.
+// v3.2.0: the seller-side /seller/connectors route was removed in the zip
+// rebuild. Connectors moved under /seller/catalog/connectors as a mock UI
+// page. Chat sidebar's Connectors link now points there.
 
 export interface ChatNavEntry {
   id: string
@@ -19,7 +17,7 @@ export interface ChatNavEntry {
 /** Quick-nav entries surfaced in the chat sidebar above the New Chat button. */
 export const CHAT_SIDEBAR_NAV: ChatNavEntry[] = [
   { id: 'automation', labelEn: 'Automation', labelZh: '自动化',  href: '/chat/automation' },
-  { id: 'connectors', labelEn: 'Connectors', labelZh: '连接器',  href: '/seller/connectors' },
+  { id: 'connectors', labelEn: 'Connectors', labelZh: '连接器',  href: '/seller/catalog/connectors' },
   { id: 'mcps',       labelEn: 'MCPs',       labelZh: 'MCPs',     href: '/chat/mcp' },
   { id: 'skills',     labelEn: 'Skills',     labelZh: '技能',     href: '/chat/skills' },
 ]

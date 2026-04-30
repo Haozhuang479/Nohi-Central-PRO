@@ -1,40 +1,28 @@
-import React from 'react'
-import { Outlet } from 'react-router-dom'
-import { SellerSidebar } from '@/components/seller/seller-sidebar'
-import { Titlebar } from '@/components/shell/titlebar'
-import { CommandPalette } from '@/components/shell/command-palette'
-import { SidebarProvider } from '@/components/ui/sidebar'
-import type { NohiSettings } from '../../../electron/main/engine/types'
+// Seller-side outer chrome — wraps every route under /seller in the
+// shadcn Sidebar shell from the v3.2.0 zip rebuild. LanguageProvider /
+// ChannelStateProvider are intentionally NOT mounted here; they live up
+// at App.tsx so chat and seller share the same context instances.
+//
+// Children come from <Outlet /> instead of a `children` prop because
+// React Router v6 nested routes use Outlet, not Next-style layouts.
 
-interface SellerLayoutProps {
-  settings: NohiSettings
-  onSettingsSave: (s: NohiSettings) => void
-}
+import React from "react"
+import { Outlet } from "react-router-dom"
+import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
+import { SellerSidebar } from "@/components/seller/seller-sidebar"
 
-export function SellerLayout({ settings, onSettingsSave }: SellerLayoutProps) {
-  // Suppress unused-var lint on onSettingsSave — kept on props so
-  // nested pages (like SettingsPage) that receive it directly via App.tsx
-  // routing don't need to thread it through the layout.
-  void onSettingsSave
-
+export function SellerLayout() {
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-background">
-      {/* ── Titlebar (macOS traffic lights + drag region) ── */}
-      <Titlebar />
-
-      {/* ── Body: sidebar + scrollable main content ── */}
-      {/* SidebarProvider renders a flex-1 min-h-0 overflow-hidden row */}
-      <SidebarProvider defaultOpen style={{ '--sidebar-width': '220px' } as React.CSSProperties}>
-        <SellerSidebar />
-
-        {/* Main scrollable outlet */}
-        <main className="flex-1 min-h-0 overflow-y-auto">
+    <SidebarProvider style={{ "--sidebar-width": "200px" } as React.CSSProperties}>
+      <SellerSidebar />
+      <SidebarInset className="m-0 rounded-none shadow-none">
+        <header className="flex h-14 items-center gap-2 border-b border-border px-4 md:px-6">
+          <SidebarTrigger className="-ml-2" />
+        </header>
+        <div className="flex-1 overflow-auto">
           <Outlet />
-        </main>
-      </SidebarProvider>
-
-      {/* ── Cmd+K command palette (global) ── */}
-      <CommandPalette />
-    </div>
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   )
 }

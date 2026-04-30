@@ -1,3 +1,4 @@
+
 import { useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -11,6 +12,7 @@ export default function NohiWebsitesPage() {
 
   const handleSearch = () => {
     if (search.trim()) {
+      // Mock search results
       setResults([
         { url: search.includes(".") ? search : `${search}.com`, productCount: Math.floor(Math.random() * 500) + 50 },
       ])
@@ -36,7 +38,7 @@ export default function NohiWebsitesPage() {
             {t("discover.websites")}
           </h1>
           <p className="text-base text-muted-foreground mt-3">
-            {language === "zh"
+            {language === "zh" 
               ? "输入网站URL查看我们已索引的所有产品。"
               : "Type a website URL to see all the products we've indexed for it."}
           </p>
@@ -82,7 +84,7 @@ export default function NohiWebsitesPage() {
                   <div>
                     <span className="text-sm font-medium text-foreground">{result.url}</span>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {language === "zh"
+                      {language === "zh" 
                         ? `已索引 ${result.productCount.toLocaleString()} 个产品`
                         : `${result.productCount.toLocaleString()} products indexed`}
                     </p>

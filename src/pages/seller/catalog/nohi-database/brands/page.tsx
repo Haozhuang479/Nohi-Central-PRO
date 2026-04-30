@@ -1,3 +1,4 @@
+
 import { useState } from "react"
 import { Link } from "react-router-dom"
 import { Input } from "@/components/ui/input"
@@ -67,7 +68,7 @@ export default function NohiBrandsPage() {
           {filteredBrands.map((brand) => (
             <Link
               key={brand.id}
-              to={`/seller/catalog/nohi-database/brands/${brand.id}`}
+              href={`/seller/catalog/nohi-database/brands/${brand.id}`}
               className="w-full grid grid-cols-[1fr_auto] gap-4 px-4 py-3 text-left transition-colors hover:bg-secondary/30"
             >
               <div className="flex items-center gap-3">

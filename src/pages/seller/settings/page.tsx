@@ -1,888 +1,294 @@
-import { useState, useCallback, useEffect } from 'react'
-import { toast } from 'sonner'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Switch } from '@/components/ui/switch'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
-import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '@/components/ui/collapsible'
-import { Badge } from '@/components/ui/badge'
-import { cn } from '@/lib/utils'
-import { useLanguage } from '@/lib/language-context'
-import { StoreSection } from '@/components/settings/store-section'
-import { AgentSafetySection } from '@/components/settings/agent-safety-section'
-import type { NohiSettings } from '../../../../electron/main/engine/types'
 
-// ─── Types ────────────────────────────────────────────────────────────────
+import { useState } from "react"
+import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
+import { Pencil, Check, X, Globe, ChevronDown } from "lucide-react"
+import { useLanguage } from "@/lib/language-context"
+import { useChannelState } from "@/lib/channel-state"
+import { cn } from "@/lib/utils"
 
-interface SettingsPageProps {
-  settings: NohiSettings
-  onSave: (s: NohiSettings) => void
-}
+// ─── Editable Row ──────────────────────────────────────────────────────────────
 
-type ProviderId = 'anthropic' | 'openai' | 'kimi' | 'minimax' | 'deepseek'
-type TestStatus = 'idle' | 'testing' | 'success' | 'failure'
-
-interface ProviderDef {
-  id: ProviderId
-  name: string
-  recommended?: boolean
-  description: string
-  models: string[]
-  keyField: keyof NohiSettings
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────
-
-const PROVIDERS: ProviderDef[] = [
-  {
-    id: 'anthropic',
-    name: 'Anthropic Claude',
-    recommended: true,
-    description: 'Most capable for complex reasoning and code',
-    models: ['claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5'],
-    keyField: 'anthropicApiKey',
-  },
-  {
-    id: 'openai',
-    name: 'OpenAI',
-    description: 'GPT-4o, GPT-4.1, and o-series models',
-    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'o3-mini', 'o4-mini'],
-    keyField: 'openaiApiKey',
-  },
-  {
-    id: 'kimi',
-    name: 'Kimi (Moonshot)',
-    description: 'Long context Chinese AI',
-    models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
-    keyField: 'kimiApiKey',
-  },
-  {
-    id: 'minimax',
-    name: 'Minimax',
-    description: 'Fast Chinese language model',
-    models: ['abab6.5s-chat'],
-    keyField: 'minimaxApiKey',
-  },
-  {
-    id: 'deepseek',
-    name: 'Deepseek',
-    description: 'Efficient open-source model',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
-    keyField: 'deepseekApiKey',
-  },
-]
-
-const MOCK_CARDS = [
-  { id: '1', brand: 'Visa', last4: '4242', expiry: '12/27' },
-  { id: '2', brand: 'Mastercard', last4: '5555', expiry: '08/26' },
-]
-
-
-// ─── Section wrapper ──────────────────────────────────────────────────────
-
-function SettingsSection({
-  title,
-  defaultOpen = false,
-  children,
-}: {
-  title: string
-  defaultOpen?: boolean
-  children: React.ReactNode
-}) {
-  const [open, setOpen] = useState(defaultOpen)
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <div className="rounded-2xl bg-background overflow-hidden">
-        <CollapsibleTrigger asChild>
-          <button
-            type="button"
-            className="flex items-center justify-between w-full px-6 py-4 hover:bg-secondary/30 transition-colors"
-          >
-            <span className="text-sm font-semibold text-foreground">{title}</span>
-            <span className="text-xs text-muted-foreground">{open ? '▴' : '▾'}</span>
-          </button>
-        </CollapsibleTrigger>
-        <CollapsibleContent>
-          <div>{children}</div>
-        </CollapsibleContent>
-      </div>
-    </Collapsible>
-  )
-}
-
-// ─── Toggle row ───────────────────────────────────────────────────────────
-
-function ToggleRow({
-  label,
-  description,
-  checked,
-  onCheckedChange,
-}: {
+interface EditableRowProps {
   label: string
-  description?: string
-  checked: boolean
-  onCheckedChange: (v: boolean) => void
-}) {
+  value: string
+  onSave: (v: string) => void
+  options?: string[]
+}
+
+function EditableRow({ label, value, onSave, options }: EditableRowProps) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+
+  const handleSave = () => { onSave(draft); setEditing(false) }
+  const handleCancel = () => { setDraft(value); setEditing(false) }
+
   return (
-    <div className="flex items-center justify-between gap-4 py-3.5 px-6">
+    <div className="flex items-center min-h-[72px] border-b border-border last:border-b-0">
+      <div className="w-64 shrink-0 px-6 py-4">
+        <span className="text-sm font-semibold text-foreground">{label}</span>
+      </div>
+      <div className="w-px self-stretch bg-border shrink-0" />
+      <div className="flex-1 px-6 py-4 flex items-center justify-between gap-4">
+        {editing ? (
+          <div className="flex items-center gap-2 flex-1">
+            {options ? (
+              <div className="relative flex-1 max-w-xs">
+                <select
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  className="w-full appearance-none bg-background border border-border rounded-lg pl-3 pr-8 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  {options.map((o) => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 size-3.5 pointer-events-none text-muted-foreground" />
+              </div>
+            ) : (
+              <Input value={draft} onChange={(e) => setDraft(e.target.value)} className="max-w-xs rounded-lg h-8 text-sm" autoFocus />
+            )}
+            <button onClick={handleSave} className="size-7 flex items-center justify-center rounded-lg bg-foreground text-background hover:opacity-80 transition-opacity">
+              <Check className="size-3.5" />
+            </button>
+            <button onClick={handleCancel} className="size-7 flex items-center justify-center rounded-lg bg-secondary hover:bg-secondary/80 transition-colors">
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <span className="text-sm text-muted-foreground">{value}</span>
+            <button onClick={() => { setDraft(value); setEditing(true) }} className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded">
+              <Pencil className="size-4" />
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Channel data ──────────────────────────────────────────────────────────────
+
+const organicChannels = [
+  { id: "conversational-storefront", name: "Conversational Storefront", nameZh: "对话式店面" },
+  { id: "google-ai", name: "Google AI Mode", nameZh: "Google AI 模式" },
+  { id: "chatgpt-acp", name: "ChatGPT ACP", nameZh: "ChatGPT ACP" },
+  { id: "google-ucp", name: "Google UCP", nameZh: "Google UCP" },
+  { id: "perplexity", name: "Perplexity", nameZh: "Perplexity" },
+  { id: "copilot", name: "Microsoft Copilot", nameZh: "Microsoft Copilot" },
+]
+
+const paidChannels = [
+  { id: "chatgpt-app", name: "ChatGPT App", nameZh: "ChatGPT App" },
+  { id: "reddit", name: "Reddit", nameZh: "Reddit" },
+  { id: "gemini", name: "Gemini", nameZh: "Gemini" },
+  { id: "chatgpt", name: "ChatGPT", nameZh: "ChatGPT" },
+  { id: "instagram", name: "Instagram", nameZh: "Instagram" },
+  { id: "pinterest", name: "Pinterest", nameZh: "Pinterest" },
+  { id: "snapchat", name: "Snapchat", nameZh: "Snapchat" },
+  { id: "tiktok", name: "TikTok", nameZh: "TikTok" },
+  { id: "third-party", name: "Third Party Agents", nameZh: "第三方智能体" },
+  { id: "creator-agents", name: "Creator Agents", nameZh: "创作者智能体" },
+  { id: "genspark", name: "Genspark", nameZh: "Genspark" },
+  { id: "kimi", name: "Kimi", nameZh: "Kimi" },
+  { id: "openclaw", name: "Openclaw", nameZh: "Openclaw" },
+]
+
+function StatusDot({ status }: { status: string }) {
+  const color =
+    status === "active" || status === "always-on" ? "bg-green-500" :
+    status === "inactive" ? "bg-yellow-400" : "bg-muted-foreground/30"
+  return <span className={cn("size-2 rounded-full shrink-0", color)} />
+}
+
+function ChannelRow({ id, name, nameZh }: { id: string; name: string; nameZh: string }) {
+  const { getChannelStatus, setChannelStatus } = useChannelState()
+  const { language } = useLanguage()
+  const status = getChannelStatus(id)
+  const isOn = status === "active" || status === "always-on"
+
+  return (
+    <div className="flex items-center gap-4 px-5 py-4 border-b border-border last:border-b-0">
+      <StatusDot status={status} />
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-foreground">{label}</p>
-        {description && (
-          <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
-        )}
-      </div>
-      <Switch checked={checked} onCheckedChange={onCheckedChange} />
-    </div>
-  )
-}
-
-// ─── Provider card ────────────────────────────────────────────────────────
-
-function ProviderCard({
-  provider,
-  apiKey,
-  onApiKeyChange,
-  selectedModel,
-  onModelChange,
-  isPrimary,
-  onSetPrimary,
-  monthlyBudget,
-  onBudgetChange,
-  onSaveAll,
-  language,
-}: {
-  provider: ProviderDef
-  apiKey: string
-  onApiKeyChange: (v: string) => void
-  selectedModel: string
-  onModelChange: (v: string) => void
-  isPrimary: boolean
-  onSetPrimary: () => void
-  monthlyBudget: string
-  onBudgetChange: (v: string) => void
-  onSaveAll: () => void
-  language: string
-}) {
-  const [showKey, setShowKey] = useState(false)
-  const [testStatus, setTestStatus] = useState<TestStatus>('idle')
-
-  const testConnection = useCallback(async () => {
-    if (!apiKey.trim()) {
-      toast.error(language === 'zh' ? '请先输入 API Key' : 'Please enter an API key first')
-      return
-    }
-    setTestStatus('testing')
-    try {
-      const result = await window.nohi.testApiKey(provider.id, apiKey.trim())
-      setTestStatus(result.success ? 'success' : 'failure')
-      if (result.success) {
-        // Auto-save settings when test passes so key is persisted immediately
-        onSaveAll()
-        toast.success(
-          language === 'zh'
-            ? `${provider.name} 连接成功，已自动保存`
-            : `${provider.name} connected — settings auto-saved`
-        )
-      } else {
-        toast.error(
-          language === 'zh'
-            ? `${provider.name} 连接失败：${result.error ?? '请检查 API Key'}`
-            : `${provider.name} connection failed: ${result.error ?? 'check your key'}`
-        )
-      }
-    } catch {
-      setTestStatus('failure')
-      toast.error(language === 'zh' ? '测试失败' : 'Test failed')
-    }
-  }, [apiKey, provider, language])
-
-  return (
-    <div
-      className={cn(
-        'rounded-2xl p-4 transition-all',
-        isPrimary
-          ? 'bg-secondary/30'
-          : 'bg-background'
-      )}
-    >
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2 mb-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-foreground">{provider.name}</span>
-            {provider.recommended && (
-              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                {language === 'zh' ? '推荐' : 'Recommended'}
-              </Badge>
-            )}
-            {isPrimary && (
-              <Badge className="text-[10px] px-1.5 py-0">
-                {language === 'zh' ? '主要' : 'Primary'}
-              </Badge>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground mt-0.5">{provider.description}</p>
-        </div>
-      </div>
-
-      {/* API Key */}
-      <div className="space-y-3">
-        <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-            {language === 'zh' ? 'API 密钥' : 'API Key'}
-          </label>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Input
-                type={showKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={(e) => onApiKeyChange(e.target.value)}
-                placeholder={`Enter ${provider.name} API key…`}
-                className="pr-10 text-xs font-mono"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey((v) => !v)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <span className="text-xs">{showKey ? 'Hide' : 'Show'}</span>
-              </button>
-            </div>
-
-            {/* Test connection */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={testConnection}
-              disabled={testStatus === 'testing' || !apiKey.trim()}
-              className="shrink-0 text-xs gap-1.5"
-            >
-              {testStatus === 'success' && <span className="text-emerald-500 text-xs">✓</span>}
-              {testStatus === 'failure' && <span className="text-destructive text-xs">✗</span>}
-              {testStatus === 'idle'
-                ? language === 'zh' ? '测试连接' : 'Test'
-                : testStatus === 'testing'
-                  ? language === 'zh' ? '测试中…' : 'Testing…'
-                  : testStatus === 'success'
-                    ? language === 'zh' ? '已连接' : 'Connected'
-                    : language === 'zh' ? '失败' : 'Failed'}
-            </Button>
-          </div>
-        </div>
-
-        {/* Model selector — only shown when key is set */}
-        {apiKey && (
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-              {language === 'zh' ? '模型' : 'Model'}
-            </label>
-            <Select value={selectedModel} onValueChange={onModelChange}>
-              <SelectTrigger className="text-xs h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {provider.models.map((m) => (
-                  <SelectItem key={m} value={m} className="text-xs">
-                    {m}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
-        {/* Monthly budget */}
-        <div>
-          <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-            {language === 'zh' ? '月度预算（可选，USD）' : 'Monthly Budget (optional, USD)'}
-          </label>
-          <Input
-            type="number"
-            min="0"
-            step="1"
-            value={monthlyBudget}
-            onChange={(e) => onBudgetChange(e.target.value)}
-            placeholder="e.g. 50"
-            className="text-xs h-8 w-32"
-          />
-        </div>
-
-        {/* Set as primary */}
-        {!isPrimary && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onSetPrimary}
-            className="gap-1.5 text-xs mt-1"
-          >
-            {language === 'zh' ? '设为主要提供商' : 'Set as Primary'}
-          </Button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// ─── Main page ───────────────────────────────────────────────────────────
-
-export default function SettingsPage({ settings, onSave }: SettingsPageProps) {
-  const { language, setLanguage } = useLanguage()
-
-  // ── Local draft state ────────────────────────────────────────────────
-  const [draft, setDraft] = useState<NohiSettings>(() => ({ ...settings }))
-  const [storeEditing, setStoreEditing] = useState(false)
-
-  // Provider-specific local state (api keys, models, budgets)
-  const [apiKeys, setApiKeys] = useState<Record<ProviderId, string>>({
-    anthropic: settings.anthropicApiKey ?? '',
-    openai: settings.openaiApiKey ?? '',
-    kimi: settings.kimiApiKey ?? '',
-    minimax: settings.minimaxApiKey ?? '',
-    deepseek: settings.deepseekApiKey ?? '',
-  })
-  const [providerModels, setProviderModels] = useState<Record<ProviderId, string>>({
-    anthropic: settings.defaultModel && settings.primaryProvider === 'anthropic' ? settings.defaultModel : PROVIDERS[0].models[0],
-    openai: PROVIDERS[1].models[0],
-    kimi: PROVIDERS[2].models[0],
-    minimax: PROVIDERS[3].models[0],
-    deepseek: PROVIDERS[4].models[0],
-  })
-  const [providerBudgets, setProviderBudgets] = useState<Record<ProviderId, string>>({
-    anthropic: '',
-    openai: '',
-    kimi: '',
-    minimax: '',
-    deepseek: '',
-  })
-  const [primaryProvider, setPrimaryProvider] = useState<ProviderId>(
-    (settings.primaryProvider as ProviderId) ?? 'anthropic'
-  )
-
-  const patch = useCallback(<K extends keyof NohiSettings>(key: K, value: NohiSettings[K]) => {
-    setDraft((prev) => ({ ...prev, [key]: value }))
-  }, [])
-
-  const saveStore = () => {
-    onSave(draft)
-    setStoreEditing(false)
-    toast.success(language === 'zh' ? '店铺信息已保存' : 'Store info saved')
-  }
-
-  const saveProviders = () => {
-    const next: NohiSettings = {
-      ...draft,
-      anthropicApiKey: apiKeys.anthropic || undefined,
-      openaiApiKey: apiKeys.openai || undefined,
-      kimiApiKey: apiKeys.kimi || undefined,
-      minimaxApiKey: apiKeys.minimax || undefined,
-      deepseekApiKey: apiKeys.deepseek || undefined,
-      primaryProvider: primaryProvider,
-      defaultModel: providerModels[primaryProvider],
-    }
-    setDraft(next)
-    onSave(next)
-    toast.success(language === 'zh' ? 'AI 提供商设置已保存' : 'AI provider settings saved')
-  }
-
-  const savePermissions = () => {
-    onSave(draft)
-    toast.success(language === 'zh' ? '权限设置已保存' : 'Permissions saved')
-  }
-
-  const saveNotifications = () => {
-    onSave(draft)
-    toast.success(language === 'zh' ? '通知设置已保存' : 'Notifications saved')
-  }
-
-  const saveAppearance = () => {
-    onSave(draft)
-    toast.success(language === 'zh' ? '外观设置已保存' : 'Appearance saved')
-  }
-
-  return (
-    <div className="p-6 md:p-10 max-w-4xl mx-auto flex flex-col gap-5">
-      {/* Page header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-foreground tracking-tight">
-          {language === 'zh' ? '设置' : 'Settings'}
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          {language === 'zh'
-            ? '管理您的店铺、AI 提供商及应用偏好'
-            : 'Manage your store, AI providers, and app preferences'}
+        <span className="text-sm font-medium text-foreground">
+          {language === "zh" ? nameZh : name}
+        </span>
+        <p className="text-xs text-muted-foreground">
+          {status === "active" || status === "always-on"
+            ? (language === "zh" ? "已启用" : "Active")
+            : status === "inactive"
+            ? (language === "zh" ? "已停用" : "Inactive")
+            : (language === "zh" ? "未连接" : "Disconnected")}
         </p>
       </div>
+      <Switch
+        checked={isOn}
+        onCheckedChange={(checked) => setChannelStatus(id, checked ? "active" : "inactive")}
+        className="shrink-0"
+        aria-label={`Toggle ${name}`}
+      />
+    </div>
+  )
+}
 
-      {/* ── 1. Store Information ────────────────────────────────────────── */}
-      <SettingsSection
-        title={language === 'zh' ? '店铺信息' : 'Store Information'}
-        defaultOpen
-      >
-        <StoreSection
-          draft={draft}
-          patch={patch}
-          storeEditing={storeEditing}
-          setStoreEditing={setStoreEditing}
-          onSaveStore={saveStore}
-          onResetDraft={() => setDraft({ ...settings })}
-          language={language}
-        />
-      </SettingsSection>
+// ─── Options ───────────────────────────────────────────────────────────────────
 
-      {/* ── 2. AI Providers ─────────────────────────────────────────────── */}
-      <SettingsSection
-        title={language === 'zh' ? 'AI 提供商' : 'AI Providers'}
-        defaultOpen
-      >
-        <div className="p-6 space-y-4">
-          <p className="text-xs text-muted-foreground">
-            {language === 'zh'
-              ? '配置您的 AI 提供商 API 密钥，并设置主要提供商用于智能体任务。'
-              : 'Configure your AI provider API keys and set a primary provider for agentic tasks.'}
-          </p>
+const currencies = ["EUR", "USD", "GBP", "JPY", "CNY", "AUD", "CAD"]
+const timezones = ["GMT", "GMT+1", "GMT+2", "GMT+8", "GMT-5", "GMT-8", "America/New_York", "Asia/Shanghai"]
+const langOptions = ["English", "中文", "Français", "Deutsch", "Español", "日本語"]
 
-          <div className="flex flex-col gap-3">
-            {PROVIDERS.map((provider) => (
-              <ProviderCard
-                key={provider.id}
-                provider={provider}
-                apiKey={apiKeys[provider.id]}
-                onApiKeyChange={(v) => setApiKeys((prev) => ({ ...prev, [provider.id]: v }))}
-                selectedModel={providerModels[provider.id]}
-                onModelChange={(v) => setProviderModels((prev) => ({ ...prev, [provider.id]: v }))}
-                isPrimary={primaryProvider === provider.id}
-                onSetPrimary={() => setPrimaryProvider(provider.id)}
-                monthlyBudget={providerBudgets[provider.id]}
-                onBudgetChange={(v) => setProviderBudgets((prev) => ({ ...prev, [provider.id]: v }))}
-                onSaveAll={saveProviders}
-                language={language}
-              />
-            ))}
-          </div>
+// ─── Page ──────────────────────────────────────────────────────────────────────
 
-          <Button size="sm" onClick={saveProviders} className="mt-2">
-            {language === 'zh' ? '保存提供商设置' : 'Save Provider Settings'}
-          </Button>
-        </div>
-      </SettingsSection>
+type Tab = "store" | "personal" | "channels"
 
-      {/* ── 3. Permissions ──────────────────────────────────────────────── */}
-      <SettingsSection title={language === 'zh' ? '权限' : 'Permissions'}>
-        <div>
-          <ToggleRow
-            label={language === 'zh' ? '自动同步目录' : 'Auto-sync catalog'}
-            description={
-              language === 'zh'
-                ? 'AI 可自动触发目录同步，无需手动确认'
-                : 'AI can auto-trigger catalog syncs without manual confirmation'
-            }
-            checked={draft.autoSyncCatalog ?? false}
-            onCheckedChange={(v) => patch('autoSyncCatalog', v)}
-          />
-          <ToggleRow
-            label={language === 'zh' ? '自动推送至渠道' : 'Auto-push to channels'}
-            description={
-              language === 'zh'
-                ? '允许 AI 在无需批准的情况下将更新推送至分发渠道'
-                : 'Allow AI to push updates to distribution channels without approval'
-            }
-            checked={draft.autoPushChannels ?? false}
-            onCheckedChange={(v) => patch('autoPushChannels', v)}
-          />
-          <ToggleRow
-            label={language === 'zh' ? '自动生成产品描述' : 'Auto-generate descriptions'}
-            description={
-              language === 'zh'
-                ? 'AI 可自动为新产品生成和更新描述'
-                : 'AI can automatically generate and update descriptions for new products'
-            }
-            checked={draft.autoGenerateDescriptions ?? false}
-            onCheckedChange={(v) => patch('autoGenerateDescriptions', v)}
-          />
-          <ToggleRow
-            label={language === 'zh' ? '自动更新品牌背景' : 'Auto-update brand context'}
-            description={
-              language === 'zh'
-                ? '允许 AI 自主优化和更新您的品牌背景资料'
-                : 'Allow AI to autonomously refine and update your brand context'
-            }
-            checked={draft.autoUpdateBrandContext ?? false}
-            onCheckedChange={(v) => patch('autoUpdateBrandContext', v)}
-          />
-          <div className="px-6 py-4">
-            <Button size="sm" onClick={savePermissions}>
-              {language === 'zh' ? '保存权限' : 'Save Permissions'}
-            </Button>
-          </div>
-        </div>
-      </SettingsSection>
+export default function SettingsPage() {
+  const { language, setLanguage } = useLanguage()
+  const { channelStates } = useChannelState()
+  const [activeTab, setActiveTab] = useState<Tab>("store")
 
-      {/* ── 4. Notifications ────────────────────────────────────────────── */}
-      <SettingsSection title={language === 'zh' ? '通知' : 'Notifications'}>
-        <div>
-          <ToggleRow
-            label={language === 'zh' ? '桌面通知' : 'Desktop notifications'}
-            description={
-              language === 'zh'
-                ? '当 AI 任务完成或需要关注时显示系统通知'
-                : 'Show system notifications when AI tasks complete or need attention'
-            }
-            checked={draft.notifyDesktop ?? true}
-            onCheckedChange={(v) => patch('notifyDesktop', v)}
-          />
-          <ToggleRow
-            label={language === 'zh' ? '低库存预警' : 'Low stock alerts'}
-            description={
-              language === 'zh'
-                ? '当产品库存低于阈值时收到提醒'
-                : 'Get notified when product stock falls below threshold'
-            }
-            checked={false}
-            onCheckedChange={() => {}}
-          />
-          <ToggleRow
-            label={language === 'zh' ? '渠道同步完成' : 'Channel sync complete'}
-            description={
-              language === 'zh'
-                ? '渠道同步操作完成后收到通知'
-                : 'Receive a notification when a channel sync operation finishes'
-            }
-            checked={draft.notifyChannelSync ?? true}
-            onCheckedChange={(v) => patch('notifyChannelSync', v)}
-          />
+  const [currency, setCurrency] = useState("EUR")
+  const [timezone, setTimezone] = useState("GMT")
+  const [lang, setLang] = useState("English")
+  const [brandName, setBrandName] = useState("Nohi Demo Store")
+  const [storeLink, setStoreLink] = useState("https://nohi-demo.myshopify.com")
+  const [category, setCategory] = useState("Fashion & Apparel")
 
-          {/* Cost threshold */}
-          <div className="flex items-center justify-between gap-4 py-3.5 px-6">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-foreground">
-                {language === 'zh' ? '费用阈值提醒' : 'Cost threshold alert'}
-              </p>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {language === 'zh'
-                  ? '当 AI 费用超过指定金额时提醒（USD）'
-                  : 'Alert when AI spend exceeds the specified amount (USD)'}
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Switch
-                checked={(draft.notifyCostThreshold ?? 0) > 0}
-                onCheckedChange={(v) => patch('notifyCostThreshold', v ? 10 : 0)}
-              />
-              {(draft.notifyCostThreshold ?? 0) > 0 && (
-                <div className="relative w-20">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">$</span>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={draft.notifyCostThreshold ?? 10}
-                    onChange={(e) => patch('notifyCostThreshold', Number(e.target.value))}
-                    className="pl-6 text-xs h-8"
-                  />
-                </div>
-              )}
-            </div>
-          </div>
+  const activeCount = Object.values(channelStates).filter(
+    (s) => s === "active" || s === "always-on"
+  ).length
+  const totalCount = organicChannels.length + paidChannels.length
 
-          <div className="px-6 py-4">
-            <Button size="sm" onClick={saveNotifications}>
-              {language === 'zh' ? '保存通知设置' : 'Save Notifications'}
-            </Button>
-          </div>
-        </div>
-      </SettingsSection>
+  const tabs: { id: Tab; label: string; labelZh: string }[] = [
+    { id: "store", label: "Store", labelZh: "商店" },
+    { id: "personal", label: "Personal", labelZh: "个人" },
+    { id: "channels", label: "Channels", labelZh: "渠道" },
+  ]
 
-      {/* ── 5. Appearance ───────────────────────────────────────────────── */}
-      <SettingsSection title={language === 'zh' ? '外观' : 'Appearance'}>
-        <div className="p-6 space-y-6">
-          {/* Theme */}
-          <div>
-            <p className="text-sm font-medium text-foreground mb-3">
-              {language === 'zh' ? '主题' : 'Theme'}
-            </p>
-            <div className="grid grid-cols-2 gap-3 max-w-sm">
-              {(['light', 'dark'] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  onClick={() => patch('theme', t)}
-                  className={cn(
-                    'flex flex-col items-center gap-2 rounded-2xl border p-4 transition-all hover:bg-secondary/30',
-                    draft.theme === t
-                      ? 'border-foreground/40 bg-secondary/30'
-                      : 'border-border bg-background'
-                  )}
-                >
-                  <div
-                    className={cn(
-                      'size-10 rounded-xl border border-border flex items-center justify-center text-xs font-medium',
-                      t === 'dark' ? 'bg-zinc-900 text-white' : 'bg-white text-zinc-900'
-                    )}
-                  >
-                    Aa
-                  </div>
-                  <span className="text-xs font-medium text-foreground">
-                    {t === 'light'
-                      ? language === 'zh' ? '浅色' : 'Light'
-                      : language === 'zh' ? '深色' : 'Dark'}
-                  </span>
-                  {draft.theme === t && (
-                    <span className="text-emerald-500 text-xs">✓</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
+  return (
+    <div className="p-6 md:p-10 max-w-4xl mx-auto flex flex-col gap-8">
 
-          {/* Language */}
-          <div>
-            <p className="text-sm font-medium text-foreground mb-3">
-              {language === 'zh' ? '语言' : 'Language'}
-            </p>
-            <div className="grid grid-cols-2 gap-3 max-w-sm">
-              {([
-                { value: 'en', label: 'English', sublabel: 'English' },
-                { value: 'zh', label: '中文', sublabel: 'Chinese' },
-              ] as const).map((lang) => (
-                <button
-                  key={lang.value}
-                  type="button"
-                  onClick={() => {
-                    setLanguage(lang.value)
-                    patch('language', lang.value)
-                  }}
-                  className={cn(
-                    'flex flex-col items-center gap-1.5 rounded-2xl border p-4 transition-all hover:bg-secondary/30',
-                    language === lang.value
-                      ? 'border-foreground/40 bg-secondary/30'
-                      : 'border-border bg-background'
-                  )}
-                >
-                  <span className="text-2xl">{lang.value === 'en' ? '🇺🇸' : '🇨🇳'}</span>
-                  <span className="text-sm font-semibold text-foreground">{lang.label}</span>
-                  <span className="text-xs text-muted-foreground">{lang.sublabel}</span>
-                  {language === lang.value && (
-                    <span className="text-emerald-500 text-xs">✓</span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Header */}
+      <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+        {language === "zh" ? "设置" : "Settings"}
+      </h1>
 
-          <Button size="sm" onClick={saveAppearance}>
-            {language === 'zh' ? '保存外观设置' : 'Save Appearance'}
-          </Button>
-        </div>
-      </SettingsSection>
-
-      {/* ── 5b. Privacy & Diagnostics ────────────────────────────────── */}
-      {/* ── 5b. Agent Safety (bash consent) ──────────────────────────── */}
-      <SettingsSection title={language === 'zh' ? '智能体安全' : 'Agent Safety'}>
-        <AgentSafetySection
-          draft={draft}
-          patch={patch}
-          onSave={onSave}
-          language={language}
-        />
-      </SettingsSection>
-
-      <SettingsSection title={language === 'zh' ? '隐私与诊断' : 'Privacy & Diagnostics'}>
-        <div className="p-6 space-y-3">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex-1">
-              <p className="text-sm font-medium text-foreground">
-                {language === 'zh' ? '本地遥测' : 'Local telemetry'}
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                {language === 'zh'
-                  ? '记录会话摘要到 ~/.nohi/telemetry/ — 仅本地，不上传，可随时查看或删除。用于自我诊断与 bug 报告。'
-                  : 'Record per-session summaries to ~/.nohi/telemetry/. Local only — never uploaded. Useful for self-diagnostics and bug reports.'}
-              </p>
-            </div>
-            <Switch
-              checked={draft.telemetryEnabled ?? false}
-              onCheckedChange={(v) => { patch('telemetryEnabled', v); onSave({ ...draft, telemetryEnabled: v }) }}
-            />
-          </div>
-        </div>
-      </SettingsSection>
-
-      {/* ── 6. Web Search ────────────────────────────────────────────── */}
-      <SettingsSection title={language === 'zh' ? '网页搜索' : 'Web Search'}>
-        <div className="p-6 space-y-3">
-          <p className="text-xs text-muted-foreground">
-            {language === 'zh'
-              ? '配置 Brave Search API 密钥以获得更好的搜索结果。无密钥时将使用 DuckDuckGo 作为备选。'
-              : 'Configure a Brave Search API key for better search results. Falls back to DuckDuckGo without a key.'}
-          </p>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-              Brave Search API Key
-            </label>
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                value={draft.braveSearchApiKey ?? ''}
-                onChange={(e) => patch('braveSearchApiKey', e.target.value || undefined)}
-                placeholder="BSA-..."
-                className="flex-1 text-xs font-mono"
-              />
-              <Button size="sm" onClick={() => { onSave(draft); toast.success(language === 'zh' ? '已保存' : 'Saved') }}>
-                {language === 'zh' ? '保存' : 'Save'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </SettingsSection>
-
-      {/* ── 6b. Firecrawl ───────────────────────────────────────────────── */}
-      <SettingsSection title="Firecrawl">
-        <div className="p-6 space-y-3">
-          <p className="text-xs text-muted-foreground">
-            {language === 'zh'
-              ? 'Firecrawl 是高级网页抓取与爬虫服务，支持 JavaScript 渲染、内容提取和全站爬取。获取 API 密钥：firecrawl.dev'
-              : 'Firecrawl provides advanced web scraping with JavaScript rendering, clean content extraction, and full-site crawling. Get an API key at firecrawl.dev'}
-          </p>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-              Firecrawl API Key
-            </label>
-            <div className="flex gap-2">
-              <Input
-                type="password"
-                value={draft.firecrawlApiKey ?? ''}
-                onChange={(e) => patch('firecrawlApiKey', e.target.value || undefined)}
-                placeholder="fc-..."
-                className="flex-1 text-xs font-mono"
-              />
-              <Button size="sm" onClick={() => { onSave(draft); toast.success(language === 'zh' ? '已保存' : 'Saved') }}>
-                {language === 'zh' ? '保存' : 'Save'}
-              </Button>
-            </div>
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-              {language === 'zh' ? '自托管实例 URL（可选）' : 'Self-hosted Instance URL (optional)'}
-            </label>
-            <Input
-              type="text"
-              value={draft.firecrawlApiUrl ?? ''}
-              onChange={(e) => patch('firecrawlApiUrl', e.target.value || undefined)}
-              placeholder="https://api.firecrawl.dev"
-              className="text-xs font-mono"
-            />
-          </div>
-        </div>
-      </SettingsSection>
-
-      {/* ── 6c. Agentic Catalog ─────────────────────────────────────────── */}
-      <SettingsSection title={language === 'zh' ? 'Agentic Catalog' : 'Agentic Catalog'}>
-        <div className="p-6 space-y-3">
-          <p className="text-xs text-muted-foreground">
-            {language === 'zh'
-              ? 'Agentic Catalog 是 Nohi 协议下的商品上下文基础设施。连接到你的目录 API 端点。'
-              : 'The Agentic Catalog is Nohi\'s product context infrastructure. Configure the API endpoint your merchant catalog lives on.'}
-          </p>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-              {language === 'zh' ? 'API 端点 URL' : 'API Base URL'}
-            </label>
-            <Input
-              type="text"
-              value={draft.catalogApiUrl ?? ''}
-              onChange={(e) => patch('catalogApiUrl', e.target.value || undefined)}
-              placeholder="https://api.nohi.art or your self-hosted endpoint"
-              className="text-xs font-mono"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-              {language === 'zh' ? 'API Token' : 'API Token'}
-            </label>
-            <Input
-              type="password"
-              value={draft.catalogApiToken ?? ''}
-              onChange={(e) => patch('catalogApiToken', e.target.value || undefined)}
-              placeholder="nohi_sk_..."
-              className="text-xs font-mono"
-            />
-          </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground block mb-1.5">
-              {language === 'zh' ? 'Merchant ID' : 'Merchant ID'}
-            </label>
-            <div className="flex gap-2">
-              <Input
-                type="text"
-                value={draft.merchantId ?? ''}
-                onChange={(e) => patch('merchantId', e.target.value || undefined)}
-                placeholder="uuid"
-                className="flex-1 text-xs font-mono"
-              />
-              <Button size="sm" onClick={() => { onSave(draft); toast.success(language === 'zh' ? '已保存' : 'Saved') }}>
-                {language === 'zh' ? '保存' : 'Save'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </SettingsSection>
-
-      {/* ── 7. Payment Methods ──────────────────────────────────────────── */}
-      <SettingsSection title={language === 'zh' ? '支付方式' : 'Payment Methods'}>
-        <div className="p-6 space-y-4">
-          {/* Saved cards */}
-          <div className="space-y-2">
-            {MOCK_CARDS.map((card) => (
-              <div
-                key={card.id}
-                className="flex items-center gap-3 rounded-xl p-3 bg-muted/40"
-              >
-                <div className="size-9 rounded-lg bg-secondary flex items-center justify-center shrink-0 text-xs text-muted-foreground font-medium">
-                  ••
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground">
-                    {card.brand} •••• {card.last4}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {language === 'zh' ? '到期' : 'Expires'} {card.expiry}
-                  </p>
-                </div>
-                <Badge variant="secondary" className="text-[10px]">
-                  {language === 'zh' ? '已保存' : 'Saved'}
-                </Badge>
-              </div>
-            ))}
-          </div>
-
-          <p className="text-xs text-muted-foreground">
-            {language === 'zh'
-              ? '如需添加支付方式，请前往账户门户完成操作。'
-              : 'To add a payment method, please complete the action in the account portal.'}
-          </p>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() =>
-              toast.info(
-                language === 'zh'
-                  ? '支付门户即将推出'
-                  : 'Payment portal coming soon'
-              )
-            }
+      {/* Tabs */}
+      <div className="flex gap-0 border-b border-border [scrollbar-width:none] [&::-webkit-scrollbar]:hidden overflow-x-auto">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id)}
+            className={cn(
+              "px-4 py-2.5 text-sm font-medium whitespace-nowrap transition-colors border-b-2 -mb-px",
+              activeTab === tab.id
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
           >
-            {language === 'zh' ? '+ 添加支付方式' : '+ Add Payment Method'}
-          </Button>
+            {language === "zh" ? tab.labelZh : tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Store tab */}
+      {activeTab === "store" && (
+        <div className="flex flex-col gap-8">
+          {/* Language toggle */}
+          <div className="flex flex-col gap-3">
+            <h2 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Globe className="size-4" />
+              {language === "zh" ? "界面语言" : "Interface language"}
+            </h2>
+            <div className="grid grid-cols-2 gap-3 max-w-xs">
+              {(["en", "zh"] as const).map((l) => (
+                <button
+                  key={l}
+                  type="button"
+                  onClick={() => setLanguage(l)}
+                  className={cn(
+                    "flex items-center justify-between px-4 py-2.5 rounded-xl border text-sm font-medium transition-all",
+                    language === l
+                      ? "bg-foreground text-background border-foreground"
+                      : "bg-background border-border text-foreground hover:bg-secondary"
+                  )}
+                >
+                  <span>{l === "en" ? "English" : "中文"}</span>
+                  {language === l && <Check className="size-3.5" />}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Store Info */}
+          <div className="flex flex-col gap-3">
+            <h2 className="text-sm font-semibold text-foreground">
+              {language === "zh" ? "商店信息" : "Store information"}
+            </h2>
+            <div className="rounded-xl bg-popover overflow-hidden">
+              <EditableRow label={language === "zh" ? "商店名称" : "Store name"} value={brandName} onSave={setBrandName} />
+              <EditableRow label={language === "zh" ? "商店链接" : "Store URL"} value={storeLink} onSave={setStoreLink} />
+              <EditableRow
+                label={language === "zh" ? "品类" : "Category"}
+                value={category}
+                onSave={setCategory}
+                options={["Fashion & Apparel", "Beauty & Personal Care", "Electronics", "Home & Garden", "Sports & Outdoors"]}
+              />
+            </div>
+          </div>
         </div>
-      </SettingsSection>
+      )}
+
+      {/* Personal tab */}
+      {activeTab === "personal" && (
+        <div className="flex flex-col gap-3">
+          <h2 className="text-sm font-semibold text-foreground">
+            {language === "zh" ? "个人偏好设置" : "Personal preferences"}
+          </h2>
+          <div className="rounded-xl bg-popover overflow-hidden">
+            <EditableRow label={language === "zh" ? "货币" : "Currency"} value={currency} onSave={setCurrency} options={currencies} />
+            <EditableRow label={language === "zh" ? "时区" : "Timezone"} value={timezone} onSave={setTimezone} options={timezones} />
+            <EditableRow label={language === "zh" ? "语言" : "Language"} value={lang} onSave={setLang} options={langOptions} />
+          </div>
+        </div>
+      )}
+
+      {/* Channels tab */}
+      {activeTab === "channels" && (
+        <div className="flex flex-col gap-6">
+          <p className="text-sm text-muted-foreground">
+            {language === "zh"
+              ? `管理您的分发渠道。当前 ${activeCount} / ${totalCount} 个渠道已启用。`
+              : `Manage your distribution channels. ${activeCount} of ${totalCount} channels active.`}
+          </p>
+
+          <div className="flex flex-col gap-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              {language === "zh" ? "自然流量" : "Organic"}
+            </p>
+            <div className="rounded-2xl bg-popover overflow-hidden">
+              {organicChannels.map((ch) => <ChannelRow key={ch.id} {...ch} />)}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              {language === "zh" ? "付费渠道" : "Paid"}
+            </p>
+            <div className="rounded-2xl bg-popover overflow-hidden">
+              {paidChannels.map((ch) => <ChannelRow key={ch.id} {...ch} />)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Footer */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground border-t border-border pt-6">
+        {["Home", "Terms of sale", "Privacy policy", "Cookie Management", "Contact"].map((l) => (
+          <a key={l} href="#" className="hover:text-foreground transition-colors">{l}</a>
+        ))}
+        <span className="ml-auto">Copyright ©2026 Nohi. All rights reserved.</span>
+      </div>
     </div>
   )
 }

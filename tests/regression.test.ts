@@ -408,26 +408,10 @@ describe('regression: v2.8.2 — dead use-smart-scroll hook removed', () => {
 
 // ─── v2.8.3: cross-cutting cleanup ────────────────────────────────────────
 
-describe('regression: v2.8.3 — dead catalog/connectors page removed', () => {
-  it('/seller/catalog/connectors page file is gone', () => {
-    expect(
-      () => readFileSync(join(ROOT, 'src/pages/seller/catalog/connectors/page.tsx'), 'utf-8'),
-    ).toThrow()
-  })
-
-  it('App.tsx redirects the old route to /seller/connectors', () => {
-    const src = readFileSync(join(ROOT, 'src/App.tsx'), 'utf-8')
-    expect(src).toMatch(/path="catalog\/connectors"[\s\S]*Navigate\s+to="\/seller\/connectors"/)
-  })
-
-  it('seller-sidebar no longer links to /seller/catalog/connectors', () => {
-    const src = readFileSync(join(ROOT, 'src/components/seller/seller-sidebar.tsx'), 'utf-8')
-    // Quoted href is the thing that matters — comments referencing the old
-    // path are fine.
-    expect(src).not.toMatch(/href:\s*['"]\/seller\/catalog\/connectors['"]/)
-    expect(src).toMatch(/href:\s*['"]\/seller\/connectors['"]/)
-  })
-})
+// v2.8.3 "dead catalog/connectors removed" describe is dropped in v3.2.0:
+// the zip rebuild brings back catalog/connectors as a mock UI page, and the
+// NOHI-only /seller/connectors route is gone — both inversions of the old
+// invariants. The earlier tests are superseded by the v3.2.0 block below.
 
 describe('regression: v2.8.3 — IPC errors routed through toastIpcError', () => {
   it('ipc-toast helper exports toastIpcError', () => {
@@ -436,21 +420,154 @@ describe('regression: v2.8.3 — IPC errors routed through toastIpcError', () =>
     expect(src).toMatch(/toast\.error/)
   })
 
-  it('key call sites no longer use bare .catch(() => {})', () => {
+  // The "key call sites" assertion got pruned in v3.2.0 — most NOHI-only
+  // seller pages it referenced (seller/connectors, seller/skills,
+  // seller/mcp) were deleted in the SaaS rebuild. The remaining chat-side
+  // call sites still use toastIpcError; assert just those.
+  it('chat-side call sites still funnel IPC errors through toastIpcError', () => {
     const cases: Array<[string, RegExp]> = [
-      ['src/App.tsx',                              /settings:save/],
-      ['src/lib/use-automations.ts',               /automation:list/],
-      ['src/pages/seller/connectors/page.tsx',     /connectors:list/],
-      ['src/pages/seller/skills/page.tsx',         /skills:list/],
-      ['src/pages/chat/skills.tsx',                /skills:list/],
-      ['src/pages/chat/layout.tsx',                /sessions:list/],
-      ['src/pages/seller/mcp/page.tsx',            /mcp:reconnect/],
-      ['src/pages/chat/mcp.tsx',                   /mcp:reconnect/],
+      ['src/App.tsx',                  /settings:save/],
+      ['src/lib/use-automations.ts',   /automation:list/],
+      ['src/pages/chat/skills.tsx',    /skills:list/],
+      ['src/pages/chat/layout.tsx',    /sessions:list/],
+      ['src/pages/chat/mcp.tsx',       /mcp:reconnect/],
     ]
     for (const [rel, label] of cases) {
       const src = readFileSync(join(ROOT, rel), 'utf-8')
       expect(src, `${rel} imports toastIpcError`).toMatch(/toastIpcError/)
       expect(src, `${rel} labels with ${label}`).toMatch(label)
+    }
+  })
+})
+
+// ─── v3.2.0: SaaS reset to zip routes (Phase Q) ───────────────────────────
+// The user-supplied SaaS reference zip replaced the entire seller surface.
+// These assertions guard against accidental regression of the structural
+// invariants of that rewrite.
+
+describe('regression: v3.2.0 — zip seller routes are present', () => {
+  // 33 page.tsx files migrated wholesale. Sample a representative cross-
+  // section from every top-level area; if any of these go missing, the
+  // SaaS surface is broken.
+  it('all sampled zip seller pages exist on disk', () => {
+    const samples = [
+      'src/pages/seller/page.tsx',
+      'src/pages/seller/account/page.tsx',
+      'src/pages/seller/analytics/page.tsx',
+      'src/pages/seller/billing/page.tsx',
+      'src/pages/seller/billing/promotional-credits/page.tsx',
+      'src/pages/seller/brand-context/page.tsx',
+      'src/pages/seller/brand-context/details/page.tsx',
+      'src/pages/seller/campaigns/page.tsx',
+      'src/pages/seller/catalog/page.tsx',
+      'src/pages/seller/catalog/connect-feed/page.tsx',
+      'src/pages/seller/catalog/connectors/page.tsx',
+      'src/pages/seller/catalog/own-supply/page.tsx',
+      'src/pages/seller/catalog/own-supply/import/page.tsx',
+      'src/pages/seller/catalog/product-catalog/page.tsx',
+      'src/pages/seller/catalog/nohi-database/brands/page.tsx',
+      'src/pages/seller/catalog/nohi-database/brands/[slug]/page.tsx',
+      'src/pages/seller/catalog/nohi-database/products/page.tsx',
+      'src/pages/seller/catalog/nohi-database/products/[slug]/page.tsx',
+      'src/pages/seller/channels/page.tsx',
+      'src/pages/seller/channels/[slug]/page.tsx',
+      'src/pages/seller/channels/conversational-storefront/page.tsx',
+      'src/pages/seller/onboarding/page.tsx',
+      'src/pages/seller/settings/page.tsx',
+      'src/pages/seller/layout.tsx',
+    ]
+    for (const rel of samples) {
+      expect(
+        () => readFileSync(join(ROOT, rel), 'utf-8'),
+        `${rel} should exist`,
+      ).not.toThrow()
+    }
+  })
+
+  it('NOHI-only seller routes were removed', () => {
+    const removed = [
+      'src/pages/seller/automation/page.tsx',
+      'src/pages/seller/mcp/page.tsx',
+      'src/pages/seller/skills/page.tsx',
+      'src/pages/seller/connectors/page.tsx',
+      'src/pages/seller/home/page.tsx',
+      'src/components/seller/attribution-panel.tsx',
+    ]
+    for (const rel of removed) {
+      expect(
+        () => readFileSync(join(ROOT, rel), 'utf-8'),
+        `${rel} should be gone`,
+      ).toThrow()
+    }
+  })
+
+  it('App.tsx wires the new zip routes + redirect stubs for old ones', () => {
+    const src = readFileSync(join(ROOT, 'src/App.tsx'), 'utf-8')
+    for (const fragment of [
+      'path="account"',
+      'path="billing"',
+      'path="billing/promotional-credits"',
+      'path="campaigns"',
+      'path="onboarding"',
+      'path="catalog/own-supply/import"',
+      'path="catalog/product-catalog"',
+      'path="catalog/nohi-database/brands/:slug"',
+      'path="catalog/nohi-database/products/:slug"',
+      'path="channels/:slug"',
+    ]) {
+      expect(src, `App.tsx contains ${fragment}`).toContain(fragment)
+    }
+    // Backwards-compat redirects for the removed NOHI-only routes
+    for (const stub of ['path="automation"', 'path="mcp"', 'path="skills"', 'path="connectors"']) {
+      expect(src, `redirect for ${stub}`).toContain(stub)
+    }
+  })
+
+  it('seller pages no longer carry Next.js idioms', () => {
+    // After the Stage D batch sed, no seller page should import from
+    // next/* or carry a 'use client' directive — those are Next-only.
+    const offenders: string[] = []
+    const walk = (dir: string): void => {
+      const entries = require('fs').readdirSync(join(ROOT, dir), { withFileTypes: true })
+      for (const e of entries) {
+        const p = `${dir}/${e.name}`
+        if (e.isDirectory()) walk(p)
+        else if (e.name.endsWith('.tsx') || e.name.endsWith('.ts')) {
+          const src = readFileSync(join(ROOT, p), 'utf-8')
+          if (/from\s+['"]next\//.test(src) || /^['"]use client['"]\s*$/m.test(src)) {
+            offenders.push(p)
+          }
+        }
+      }
+    }
+    walk('src/pages/seller')
+    walk('src/components/seller')
+    expect(offenders, `Next idioms still present in: ${offenders.join(', ')}`).toEqual([])
+  })
+
+  it('seller layout uses React Router Outlet, not the Next children prop', () => {
+    const src = readFileSync(join(ROOT, 'src/pages/seller/layout.tsx'), 'utf-8')
+    expect(src).toMatch(/<Outlet\s*\/>/)
+    expect(src).toMatch(/from\s+['"]react-router-dom['"]/)
+    expect(src).not.toMatch(/children\s*\}\s*:\s*\{[\s\S]*ReactNode/)
+  })
+
+  it('chat-nav Connectors entry now points at the zip mock page', () => {
+    const src = readFileSync(join(ROOT, 'src/lib/chat-nav.ts'), 'utf-8')
+    expect(src).toMatch(/href:\s*['"]\/seller\/catalog\/connectors['"]/)
+    expect(src).not.toMatch(/href:\s*['"]\/seller\/connectors['"]/)
+  })
+
+  it('new shadcn UI primitives from the zip are available', () => {
+    const samples = [
+      'accordion.tsx', 'calendar.tsx', 'carousel.tsx', 'popover.tsx',
+      'sheet.tsx', 'sidebar.tsx', 'table.tsx', 'drawer.tsx',
+    ]
+    for (const f of samples) {
+      expect(
+        () => readFileSync(join(ROOT, `src/components/ui/${f}`), 'utf-8'),
+        `${f} present`,
+      ).not.toThrow()
     }
   })
 })
@@ -821,18 +938,11 @@ describe('regression: v2.8.3 — EmptyState + ListSkeleton components', () => {
     expect(skel).toMatch(/export function ListSkeleton/)
   })
 
-  it('four list pages adopt at least one of the shared components', () => {
-    const pages = [
-      'src/pages/seller/skills/page.tsx',
-      'src/pages/seller/connectors/page.tsx',
-      'src/pages/seller/mcp/page.tsx',
-      'src/pages/chat/mcp.tsx',
-    ]
-    for (const rel of pages) {
-      const src = readFileSync(join(ROOT, rel), 'utf-8')
-      expect(src, `${rel} uses EmptyState or ListSkeleton`).toMatch(/EmptyState|ListSkeleton/)
-    }
-  })
+  // v3.2.0: the four list pages this assertion targeted (seller/skills,
+  // seller/connectors, seller/mcp, chat/mcp) were either deleted in the
+  // zip rebuild or no longer use the shared components — the zip pages
+  // ship their own list patterns. EmptyState/ListSkeleton themselves are
+  // preserved for future reuse (asserted above).
 })
 
 // ─── v2.7.2: polish + doc drift ───────────────────────────────────────────
@@ -889,62 +999,14 @@ describe('regression: v2.7.1 — agent helpers live in agent/providers.ts', () =
   })
 })
 
-// ─── v2.7.1: analytics mock data + MetricCard extracted ──────────────────
-
-describe('regression: v2.7.1 — analytics page leaner', () => {
-  it('mock data lives in its own module', () => {
-    const src = readFileSync(join(ROOT, 'src/pages/seller/analytics/mock-data.ts'), 'utf-8')
-    for (const arr of ['viewsData', 'ordersData', 'conversionData', 'projections']) {
-      expect(src, `exports ${arr}`).toMatch(new RegExp(`export\\s+const\\s+${arr}\\b`))
-    }
-  })
-
-  it('MetricCard lives in its own module', () => {
-    const src = readFileSync(join(ROOT, 'src/pages/seller/analytics/metric-card.tsx'), 'utf-8')
-    expect(src).toMatch(/export\s+function\s+MetricCard/)
-  })
-
-  it('analytics/page.tsx imports extracted pieces and does not redeclare them', () => {
-    const src = readFileSync(join(ROOT, 'src/pages/seller/analytics/page.tsx'), 'utf-8')
-    expect(src).toMatch(/from\s+["']\.\/mock-data["']/)
-    expect(src).toMatch(/from\s+["']\.\/metric-card["']/)
-    expect(src).not.toMatch(/^function\s+MetricCard/m)
-    expect(src).not.toMatch(/^const\s+viewsData\s*=/m)
-  })
-})
-
-// ─── v2.7.0: settings sections extracted + Agent Safety UI landed ─────────
-// The settings page historically grew to 982 LOC in a single file. Phase D
-// pulls Store Information into its own component and ships the Agent Safety
-// UI (Phase B1 deferred this — bashConsentMode had a backend but no frontend).
-
-describe('regression: v2.7 — settings sections modularised', () => {
-  it('StoreSection lives in src/components/settings', () => {
-    expect(
-      () => readFileSync(join(ROOT, 'src/components/settings/store-section.tsx'), 'utf-8'),
-    ).not.toThrow()
-  })
-
-  it('AgentSafetySection renders bash consent UI + allowlist', () => {
-    const src = readFileSync(join(ROOT, 'src/components/settings/agent-safety-section.tsx'), 'utf-8')
-    expect(src).toMatch(/bashConsentMode/)
-    expect(src).toMatch(/bashAllowlist/)
-    // All 4 modes show up as object keys in the MODE_LABELS table
-    for (const mode of ['off', 'dangerous', 'always', 'allowlist']) {
-      expect(src, `mode ${mode} rendered`).toMatch(new RegExp(`\\b${mode}\\b`))
-    }
-  })
-
-  it('settings/page.tsx imports both extracted sections + does not redeclare their constants', () => {
-    const src = readFileSync(join(ROOT, 'src/pages/seller/settings/page.tsx'), 'utf-8')
-    expect(src).toMatch(/from\s+['"]@\/components\/settings\/store-section['"]/)
-    expect(src).toMatch(/from\s+['"]@\/components\/settings\/agent-safety-section['"]/)
-    // Constants moved into store-section.tsx — must not also live in page.tsx
-    expect(src).not.toMatch(/const\s+STORE_CATEGORIES\s*=/)
-    expect(src).not.toMatch(/const\s+GMV_RANGES\s*=/)
-    expect(src).not.toMatch(/const\s+TEAM_SIZES\s*=/)
-  })
-})
+// v2.7.0/v2.7.1 describes for analytics + settings extraction were
+// dropped in v3.2.0: the SaaS rebuild replaces analytics/page.tsx with the
+// zip's monolith (no mock-data.ts / metric-card.tsx split) and replaces
+// settings/page.tsx with the zip's single-file form (no store-section /
+// agent-safety-section split). The constants those describes guarded
+// (STORE_CATEGORIES etc.) no longer exist anywhere in the source tree, so
+// the assertions don't apply. AgentSafety UI specifically was deferred to
+// a Phase R+ rewire — bashConsentMode is still a real setting backend.
 
 // ─── v2.5.2: ai-console page deleted, dead i18n keys removed ─────────────
 // Duplicate chat UI at /seller/ai-console had 2 of the XSS sinks above and

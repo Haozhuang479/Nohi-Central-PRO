@@ -1,14 +1,14 @@
 {
-  "loc.electron/main": 7808,
-  "loc.src": 15327,
-  "loc.tests": 2001,
+  "loc.electron/main": 7820,
+  "loc.src": 20886,
+  "loc.tests": 2191,
   "bundle.totalKb": 8154,
   "bundle.biggestChunkKb": 997,
   "bundle.eagerKb": 3544,
   "count.tools": 28,
   "count.skills": 30,
-  "tests.passed": 269,
+  "tests.passed": 286,
   "tests.failed": 0,
-  "deps.prod": 42,
+  "deps.prod": 60,
   "deps.dev": 18
 }

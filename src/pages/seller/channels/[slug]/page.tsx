@@ -1,531 +1,292 @@
-import { useParams } from "react-router-dom"
-import { useState } from "react"
-import { Badge } from "@/components/ui/badge"
+
+import { useParams, useNavigate } from "react-router-dom"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 import { useChannelState } from "@/lib/channel-state"
+import { useState, useEffect } from "react"
 import { useLanguage } from "@/lib/language-context"
-import { ExternalLink, AlertTriangle, CheckCircle2, XCircle, Zap, TrendingUp, MousePointerClick, ShoppingCart } from "lucide-react"
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
 
-type ChannelStatus = "always-on" | "active" | "inactive" | "disconnected" | "coming"
-
-interface ChannelConfig {
+const channelData: Record<string, {
   name: string
-  status: ChannelStatus
-  description: string
-  icon: string
-  longDescription: string
-  demoUrl?: string
-  docsUrl?: string
-  analytics: {
-    impressions: string
-    clicks: string
-    conversions: string
-  }
-  setupSteps?: string[]
-}
-
-const channelConfig: Record<string, ChannelConfig> = {
+  description: { en: string; zh: string }
+  features: { en: string[]; zh: string[] }
+  type: "toggleable" | "configurable"
+  paid?: boolean
+}> = {
   "chatgpt-acp": {
     name: "ChatGPT ACP",
-    status: "always-on",
-    icon: "🤖",
-    description: "Agent Commerce Protocol integration with OpenAI's ChatGPT.",
-    longDescription: "Your products are automatically discoverable by ChatGPT when shoppers ask shopping-related questions. The Agent Commerce Protocol (ACP) enables ChatGPT to surface your catalog, answer product questions, and facilitate purchases — all without any additional configuration.",
-    demoUrl: "#chatgpt-acp-demo",
-    docsUrl: "#chatgpt-acp-docs",
-    analytics: { impressions: "184,200", clicks: "12,840", conversions: "1,047" },
+    description: {
+      en: "Connect to ChatGPT's Agentic Commerce Protocol to enable purchases directly within ChatGPT conversations.",
+      zh: "连接 ChatGPT 的智能商务协议，在 ChatGPT 对话中直接启用购买功能。"
+    },
+    features: {
+      en: ["In-chat purchases", "Product recommendations", "Order tracking"],
+      zh: ["对话内购买", "产品推荐", "订单跟踪"]
+    },
+    type: "toggleable"
   },
   "chatgpt-app": {
     name: "ChatGPT App",
-    status: "disconnected",
-    icon: "💬",
-    description: "Direct integration with the ChatGPT mobile and web application.",
-    longDescription: "Connect your store directly to the ChatGPT App to enable native in-app shopping experiences. This integration requires access approval from OpenAI and allows your products to appear as native results within the ChatGPT interface.",
-    docsUrl: "#chatgpt-app-docs",
-    analytics: { impressions: "—", clicks: "—", conversions: "—" },
-    setupSteps: [
-      "Apply for ChatGPT App merchant access via OpenAI's partner portal.",
-      "Once approved, return here and enter your ChatGPT App API credentials.",
-      "Configure your product feed preferences and response style.",
-      "Run a test query to verify your products appear correctly.",
-    ],
+    description: {
+      en: "Reach shoppers through ChatGPT's mobile and desktop applications with AI-driven product discovery.",
+      zh: "通过 ChatGPT 的移动端和桌面端应用触达购物者，实现 AI 驱动的产品发现。"
+    },
+    features: {
+      en: ["Mobile commerce", "Voice shopping", "Visual product cards"],
+      zh: ["移动商务", "语音购物", "可视化产品卡片"]
+    },
+    type: "configurable",
+    paid: true
   },
   "google-ucp": {
     name: "Google UCP",
-    status: "always-on",
-    icon: "🔍",
-    description: "Google's Universal Commerce Protocol — shop-anywhere search integration.",
-    longDescription: "Your catalog is automatically indexed by Google's Universal Commerce Protocol, making products discoverable across Google Search, Google Shopping, and Google's AI-powered shopping features. No manual configuration needed — your Nohi catalog sync handles everything.",
-    demoUrl: "#google-ucp-demo",
-    docsUrl: "#google-ucp-docs",
-    analytics: { impressions: "391,500", clicks: "28,760", conversions: "2,214" },
+    description: {
+      en: "Submit your product feed to Google's Universal Commerce Protocol for enhanced discovery and recommendations.",
+      zh: "将您的产品信息提交到 Google 通用商务协议，以增强发现和推荐功能。"
+    },
+    features: {
+      en: ["Google AI integration", "Smart recommendations", "Cross-platform reach"],
+      zh: ["Google AI 集成", "智能推荐", "跨平台覆盖"]
+    },
+    type: "toggleable"
   },
   "google-ai": {
     name: "Google AI Mode",
-    status: "always-on",
-    icon: "✨",
-    description: "Google AI Overviews and AI Mode shopping results.",
-    longDescription: "Products from your catalog can be featured in Google AI Overviews and Google's AI Mode search results. When a shopper's query matches your products, Google may surface them with rich details including price, availability, and a direct purchase path.",
-    demoUrl: "#google-ai-demo",
-    docsUrl: "#google-ai-docs",
-    analytics: { impressions: "256,100", clicks: "19,430", conversions: "1,580" },
+    description: {
+      en: "Enable your products to appear in Google's AI-powered search and shopping experiences.",
+      zh: "让您的产品出现在 Google AI 驱动的搜索和购物体验中。"
+    },
+    features: {
+      en: ["AI search results", "Shopping intent matching", "Rich product snippets"],
+      zh: ["AI 搜索结果", "购物意图匹配", "丰富的产品摘要"]
+    },
+    type: "toggleable"
   },
   "perplexity": {
     name: "Perplexity",
-    status: "always-on",
-    icon: "🔮",
-    description: "Perplexity AI answer engine with native shopping integration.",
-    longDescription: "When Perplexity users ask shopping questions, your products can be featured in the answer engine's results. Perplexity's AI synthesizes product information and links directly to your storefront, driving high-intent traffic.",
-    demoUrl: "#perplexity-demo",
-    docsUrl: "#perplexity-docs",
-    analytics: { impressions: "98,700", clicks: "7,320", conversions: "612" },
-  },
-  "reddit": {
-    name: "Reddit DPA",
-    status: "active",
-    icon: "🟠",
-    description: "Dynamic Product Ads on Reddit, powered by Nohi's catalog sync.",
-    longDescription: "Reach Reddit's highly engaged communities with Dynamic Product Ads that automatically pull from your live catalog. Ads are matched to relevant subreddits based on product categories and audience signals, with creative generated from your product images and descriptions.",
-    demoUrl: "#reddit-demo",
-    docsUrl: "#reddit-docs",
-    analytics: { impressions: "72,300", clicks: "4,890", conversions: "324" },
-  },
-  "third-party": {
-    name: "Third Party Agents",
-    status: "active",
-    icon: "🔗",
-    description: "Open API access for third-party AI agents and integrations.",
-    longDescription: "Allow external AI agents, shopping assistants, and partner platforms to query your catalog via Nohi's open API. This powers integrations with emerging AI shopping tools, browser extensions, and custom enterprise deployments.",
-    demoUrl: "#third-party-demo",
-    docsUrl: "#third-party-docs",
-    analytics: { impressions: "41,200", clicks: "3,100", conversions: "218" },
-  },
-  "creator-agents": {
-    name: "Creator Agents",
-    status: "coming",
-    icon: "🎨",
-    description: "Empower creators and influencers to build AI storefronts for your brand.",
-    longDescription: "Coming soon — Creator Agents will let you authorize content creators to build personalized AI storefronts powered by your catalog. Each creator gets a unique AI shopping experience they can share with their audience.",
-    analytics: { impressions: "—", clicks: "—", conversions: "—" },
+    description: {
+      en: "List your products on Perplexity's AI search engine for discovery by research-focused shoppers.",
+      zh: "在 Perplexity 的 AI 搜索引擎上列出您的产品，供研究型购物者发现。"
+    },
+    features: {
+      en: ["Research-driven discovery", "Detailed product info", "Comparison shopping"],
+      zh: ["研究驱动的发现", "详细产品信息", "比较购物"]
+    },
+    type: "toggleable"
   },
   "copilot": {
     name: "Microsoft Copilot",
-    status: "coming",
-    icon: "🪟",
-    description: "Shopping integration with Microsoft Copilot across Windows and Edge.",
-    longDescription: "Coming soon — your products will be discoverable through Microsoft Copilot in Windows, Edge, and Bing. Reach shoppers across the Microsoft ecosystem with AI-powered product recommendations.",
-    analytics: { impressions: "—", clicks: "—", conversions: "—" },
+    description: {
+      en: "Make your products discoverable within Microsoft Copilot's AI-assisted shopping experiences.",
+      zh: "让您的产品在 Microsoft Copilot 的 AI 购物体验中可被发现。"
+    },
+    features: {
+      en: ["Copilot shopping", "Windows integration", "Enterprise reach"],
+      zh: ["Copilot 购物", "Windows 集成", "企业端覆盖"]
+    },
+    type: "toggleable"
   },
-  "genspark": {
-    name: "Genspark",
-    status: "coming",
-    icon: "⚡",
-    description: "AI-native search and discovery via Genspark's agent platform.",
-    longDescription: "Coming soon — Genspark's AI-first search engine will feature your products in intelligent discovery flows tailored to high-intent shoppers.",
-    analytics: { impressions: "—", clicks: "—", conversions: "—" },
+  "reddit": {
+    name: "Reddit",
+    description: {
+      en: "Connect with Reddit's Dynamic Product Ads to reach engaged community members.",
+      zh: "连接 Reddit 的动态产品广告，触达活跃的社区成员。"
+    },
+    features: {
+      en: ["Community targeting", "Interest-based ads", "Authentic engagement"],
+      zh: ["社区定向", "兴趣广告", "真实互动"]
+    },
+    type: "toggleable",
+    paid: true
   },
-  "kimi": {
-    name: "Kimi",
-    status: "coming",
-    icon: "🌙",
-    description: "Moonshot AI's Kimi assistant — reaching Chinese-speaking markets.",
-    longDescription: "Coming soon — list your products on Kimi, the popular Chinese AI assistant by Moonshot AI, to reach shoppers in China and global Chinese-speaking communities.",
-    analytics: { impressions: "—", clicks: "—", conversions: "—" },
+  "gemini": {
+    name: "Gemini",
+    description: {
+      en: "Reach shoppers through Google Gemini's AI assistant with contextual product recommendations.",
+      zh: "通过 Google Gemini AI 助手向购物者提供情境化产品推荐。"
+    },
+    features: {
+      en: ["Gemini AI integration", "Contextual ads", "Smart bidding"],
+      zh: ["Gemini AI 集成", "情境广告", "智能出价"]
+    },
+    type: "toggleable",
+    paid: true
   },
-  "openclaw": {
-    name: "OpenClaw",
-    status: "coming",
-    icon: "🦞",
-    description: "OpenClaw open-source agent framework integration.",
-    longDescription: "Coming soon — integrate with OpenClaw's open-source agent framework, enabling developers to build custom AI shopping experiences on top of your catalog.",
-    analytics: { impressions: "—", clicks: "—", conversions: "—" },
+  "chatgpt": {
+    name: "ChatGPT",
+    description: {
+      en: "Run paid placements within ChatGPT conversations to drive product discovery and purchases.",
+      zh: "在 ChatGPT 对话中投放付费广告，推动产品发现和购买。"
+    },
+    features: {
+      en: ["Sponsored placements", "Conversational ads", "Performance tracking"],
+      zh: ["赞助位", "对话广告", "效果追踪"]
+    },
+    type: "toggleable",
+    paid: true
+  },
+  "instagram": {
+    name: "Instagram",
+    description: {
+      en: "Drive product discovery with visually-rich paid placements across Instagram feeds and stories.",
+      zh: "通过 Instagram 信息流和故事中的视觉化付费广告推动产品发现。"
+    },
+    features: {
+      en: ["Feed ads", "Story placements", "Shopping tags"],
+      zh: ["信息流广告", "故事投放", "购物标签"]
+    },
+    type: "toggleable",
+    paid: true
+  },
+  "pinterest": {
+    name: "Pinterest",
+    description: {
+      en: "Promote your products to high-intent shoppers browsing Pinterest's visual discovery platform.",
+      zh: "向在 Pinterest 视觉发现平台上浏览的高意向购物者推广您的产品。"
+    },
+    features: {
+      en: ["Shopping pins", "Visual search", "Audience targeting"],
+      zh: ["购物 Pin", "视觉搜索", "受众定向"]
+    },
+    type: "toggleable",
+    paid: true
+  },
+  "snapchat": {
+    name: "Snapchat",
+    description: {
+      en: "Reach Gen Z and millennial shoppers through Snapchat's immersive ad formats.",
+      zh: "通过 Snapchat 的沉浸式广告格式触达 Z 世代和千禧一代购物者。"
+    },
+    features: {
+      en: ["Dynamic ads", "AR try-on", "Story placements"],
+      zh: ["动态广告", "AR 试穿", "故事投放"]
+    },
+    type: "toggleable",
+    paid: true
+  },
+  "tiktok": {
+    name: "TikTok",
+    description: {
+      en: "Tap into TikTok's short-video commerce to reach trend-driven shoppers at scale.",
+      zh: "借助 TikTok 短视频商务，大规模触达趋势驱动的购物者。"
+    },
+    features: {
+      en: ["In-feed ads", "TikTok Shop", "Live commerce"],
+      zh: ["信息流广告", "TikTok 小店", "直播电商"]
+    },
+    type: "toggleable",
+    paid: true
+  },
+  "third-party": {
+    name: "Third Party Agents",
+    description: {
+      en: "Enable access for third-party AI shopping agents and comparison tools.",
+      zh: "为第三方 AI 购物智能体和比较工具启用访问权限。"
+    },
+    features: {
+      en: ["Open API access", "Agent marketplace", "Custom integrations"],
+      zh: ["开放 API 访问", "智能体市场", "自定义集成"]
+    },
+    type: "toggleable",
+    paid: true
   },
 }
 
-function StatusBadge({ status }: { status: ChannelStatus }) {
-  const { t } = useLanguage()
-  switch (status) {
-    case "always-on":
-      return (
-        <Badge className="bg-green-600 text-white text-xs gap-1.5">
-          <Zap className="size-3" />
-          {t("channel.alwaysOn")}
-        </Badge>
-      )
-    case "active":
-      return (
-        <Badge className="bg-green-600 text-white text-xs">
-          {t("channel.active")}
-        </Badge>
-      )
-    case "inactive":
-      return (
-        <Badge variant="secondary" className="text-xs">
-          {t("channel.inactive")}
-        </Badge>
-      )
-    case "disconnected":
-      return (
-        <Badge variant="destructive" className="text-xs gap-1.5">
-          <XCircle className="size-3" />
-          Not Connected
-        </Badge>
-      )
-    case "coming":
-      return (
-        <Badge variant="outline" className="text-xs text-muted-foreground">
-          {t("channel.coming")}
-        </Badge>
-      )
+export default function ChannelPage() {
+  const params = useParams()
+  const router = useNavigate()
+  const slug = params.slug as string
+  
+  // Redirect to dedicated page for conversational-storefront
+  useEffect(() => {
+    if (slug === "conversational-storefront") {
+      router.replace("/seller/channels/conversational-storefront")
+    }
+  }, [slug, router])
+  
+  // Show loading state while redirecting
+  if (slug === "conversational-storefront") {
+    return (
+      <div className="p-6 md:p-10 max-w-4xl mx-auto flex items-center justify-center min-h-[400px]">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    )
   }
-}
-
-export default function GenericChannelPage() {
-  const { slug } = useParams<{ slug: string }>()
+  
+  const channel = channelData[slug]
   const { getChannelStatus, setChannelStatus } = useChannelState()
-  const { language, t } = useLanguage()
-  const [showDisableWarning, setShowDisableWarning] = useState(false)
+  const [selectedApp, setSelectedApp] = useState<string | null>(null)
+  const [requestSent, setRequestSent] = useState(false)
+  const { t, language } = useLanguage()
 
-  const config = slug ? channelConfig[slug] : undefined
+  if (!channel) {
+    return (
+      <div className="p-6 md:p-10 max-w-4xl mx-auto flex flex-col items-center justify-center min-h-[400px] gap-4">
+        <h1 className="text-xl font-semibold text-foreground">{t("channel.comingSoon")}</h1>
+        <p className="text-sm text-muted-foreground text-center">
+          {t("channel.comingSoonDesc")}
+        </p>
+      </div>
+    )
+  }
 
-  // Derive the display name even if config is missing
-  const displayName = config?.name ?? (slug
-    ? slug.split("-").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
-    : "Channel")
-
-  // Use live channel state for toggleable channels; fall back to config status
-  const liveStatus = slug ? getChannelStatus(slug) : undefined
-  const configStatus = config?.status ?? "disconnected"
-
-  // For always-on / coming / disconnected we ignore the live toggle state in display
-  const isToggleable = configStatus === "active" || configStatus === "inactive" ||
-    (liveStatus === "active" || liveStatus === "inactive")
-  const isEnabled = liveStatus === "active"
+  const currentStatus = getChannelStatus(slug)
+  const isEnabled = currentStatus === "active" || currentStatus === "always-on"
+  const isActive = isEnabled
 
   const handleToggle = (checked: boolean) => {
-    if (!checked && isEnabled) {
-      setShowDisableWarning(true)
-    } else if (slug) {
-      setChannelStatus(slug, checked ? "active" : "inactive")
-    }
+    setChannelStatus(slug, checked ? "active" : "inactive")
   }
 
-  const confirmDisable = () => {
-    if (slug) setChannelStatus(slug, "inactive")
-    setShowDisableWarning(false)
-  }
+  const description = language === "zh" ? channel.description.zh : channel.description.en
+  const features = language === "zh" ? channel.features.zh : channel.features.en
 
-  // --- Coming Soon page ---
-  if (configStatus === "coming") {
-    return (
-      <div className="p-6 md:p-10 max-w-5xl mx-auto flex flex-col gap-8">
-        <div className="flex items-start gap-4">
-          <div className="size-14 rounded-2xl bg-secondary flex items-center justify-center text-2xl shrink-0">
-            {config?.icon ?? "📡"}
-          </div>
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-semibold text-foreground tracking-tight">{displayName}</h1>
-              <StatusBadge status="coming" />
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">{config?.description}</p>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-border bg-secondary/30 p-10 flex flex-col items-center text-center gap-4">
-          <div className="size-16 rounded-2xl bg-secondary flex items-center justify-center text-3xl">
-            {config?.icon ?? "📡"}
-          </div>
-          <div>
-            <h2 className="text-xl font-semibold text-foreground">{t("common.comingSoon")}</h2>
-            <p className="text-sm text-muted-foreground mt-2 max-w-md">
-              {config?.longDescription}
-            </p>
-          </div>
-          <Button variant="outline" className="rounded-full mt-2">
-            {language === "zh" ? "获取更新通知" : "Notify Me When Available"}
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
-  // --- Disconnected page ---
-  if (configStatus === "disconnected") {
-    return (
-      <div className="p-6 md:p-10 max-w-5xl mx-auto flex flex-col gap-8">
-        <div className="flex items-start gap-4">
-          <div className="size-14 rounded-2xl bg-secondary flex items-center justify-center text-2xl shrink-0">
-            {config?.icon ?? "📡"}
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-semibold text-foreground tracking-tight">{displayName}</h1>
-              <StatusBadge status="disconnected" />
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">{config?.description}</p>
-          </div>
-          {config?.docsUrl && (
-            <a
-              href={config.docsUrl}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
+  return (
+    <div className="p-6 md:p-10 max-w-4xl mx-auto flex flex-col gap-8">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl font-semibold text-foreground tracking-tight">{channel.name}</h1>
+            <Badge
+              variant="default"
+              className={cn(
+                "text-xs",
+                isActive ? "bg-green-600 text-white" : "bg-secondary text-muted-foreground"
+              )}
             >
-              <ExternalLink className="size-3.5" />
-              {language === "zh" ? "文档" : "Docs"}
-            </a>
-          )}
-        </div>
-
-        {/* Not connected card */}
-        <div className="rounded-2xl bg-secondary/50 bg-popover p-6 flex items-start gap-4">
-          <div className="size-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
-            <XCircle className="size-5 text-red-600" />
-          </div>
-          <div className="flex-1">
-            <h3 className="text-base font-medium text-foreground">
-              {language === "zh" ? "尚未连接" : "Not Connected"}
-            </h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {language === "zh"
-                ? "此渠道需要额外设置。请按照以下步骤完成连接。"
-                : "This channel requires additional setup. Follow the steps below to get connected."}
-            </p>
-          </div>
-        </div>
-
-        {/* Setup steps */}
-        {config?.setupSteps && config.setupSteps.length > 0 && (
-          <div className="flex flex-col gap-4">
-            <h2 className="text-lg font-semibold text-foreground">
-              {language === "zh" ? "设置步骤" : "Setup Guide"}
-            </h2>
-            <div className="flex flex-col gap-3">
-              {config.setupSteps.map((step, i) => (
-                <div key={i} className="rounded-2xl bg-secondary/50 bg-popover p-5 flex items-start gap-4">
-                  <div className="size-7 rounded-full bg-secondary flex items-center justify-center text-xs font-semibold text-muted-foreground shrink-0">
-                    {i + 1}
-                  </div>
-                  <p className="text-sm text-foreground leading-relaxed pt-0.5">{step}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Description */}
-        <div className="rounded-2xl bg-secondary/50 bg-popover p-6">
-          <h3 className="text-base font-medium text-foreground mb-2">
-            {language === "zh" ? "关于此渠道" : "About This Channel"}
-          </h3>
-          <p className="text-sm text-muted-foreground leading-relaxed">{config?.longDescription}</p>
-        </div>
-
-        {/* CTA */}
-        <div className="flex gap-3">
-          <Button className="rounded-full">
-            {language === "zh" ? "申请访问" : "Request Access"}
-          </Button>
-          {config?.docsUrl && (
-            <Button variant="outline" className="rounded-full gap-2">
-              <ExternalLink className="size-4" />
-              {language === "zh" ? "查看文档" : "View Docs"}
-            </Button>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  // --- Always-on page ---
-  if (configStatus === "always-on") {
-    return (
-      <>
-        <div className="p-6 md:p-10 max-w-5xl mx-auto flex flex-col gap-8">
-          {/* Header */}
-          <div className="flex items-start gap-4">
-            <div className="size-14 rounded-2xl bg-secondary flex items-center justify-center text-2xl shrink-0">
-              {config?.icon ?? "📡"}
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-2xl font-semibold text-foreground tracking-tight">{displayName}</h1>
-                <StatusBadge status="always-on" />
-              </div>
-              <p className="text-sm text-muted-foreground mt-1">{config?.description}</p>
-            </div>
-            {config?.demoUrl && (
-              <a
-                href={config.demoUrl}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
-              >
-                <ExternalLink className="size-3.5" />
-                {language === "zh" ? "演示" : "Demo"}
-              </a>
+              {isActive ? t("channel.active") : t("channel.inactive")}
+            </Badge>
+            {channel.paid && (
+              <Badge variant="outline" className="text-xs text-muted-foreground">
+                {t("channel.paid")}
+              </Badge>
             )}
           </div>
-
-          {/* Always-on status card */}
-          <div className="rounded-2xl bg-secondary/50 bg-popover p-6">
-            <div className="flex items-center gap-4">
-              <div className="size-10 rounded-full bg-green-100 flex items-center justify-center shrink-0">
-                <CheckCircle2 className="size-5 text-green-600" />
-              </div>
-              <div>
-                <h3 className="text-base font-medium text-foreground">
-                  {language === "zh" ? "始终开启" : "Always On"}
-                </h3>
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  {language === "zh"
-                    ? "此渠道由 Nohi 自动管理，无需手动启用。您的产品目录始终可被发现。"
-                    : "This channel is automatically managed by Nohi — no manual activation required. Your catalog is always discoverable."}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Analytics */}
-          <div className="rounded-2xl bg-secondary/50 bg-popover p-6">
-            <h3 className="text-base font-medium text-foreground mb-1">
-              {language === "zh" ? "渠道分析" : "Channel Analytics"}
-            </h3>
-            <p className="text-sm text-muted-foreground mb-5">
-              {language === "zh" ? "过去 30 天的表现数据。" : "Performance data for the last 30 days."}
-            </p>
-            <div className="grid grid-cols-3 gap-6">
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-wide">
-                  <TrendingUp className="size-3.5" />
-                  {language === "zh" ? "曝光量" : "Impressions"}
-                </div>
-                <span className="text-2xl font-semibold text-foreground tabular-nums">
-                  {config?.analytics.impressions}
-                </span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-wide">
-                  <MousePointerClick className="size-3.5" />
-                  {language === "zh" ? "点击量" : "Clicks"}
-                </div>
-                <span className="text-2xl font-semibold text-foreground tabular-nums">
-                  {config?.analytics.clicks}
-                </span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-wide">
-                  <ShoppingCart className="size-3.5" />
-                  {language === "zh" ? "转化数" : "Conversions"}
-                </div>
-                <span className="text-2xl font-semibold text-foreground tabular-nums">
-                  {config?.analytics.conversions}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Description */}
-          <div className="rounded-2xl bg-secondary/50 bg-popover p-6">
-            <h3 className="text-base font-medium text-foreground mb-2">
-              {language === "zh" ? "关于此渠道" : "About This Channel"}
-            </h3>
-            <p className="text-sm text-muted-foreground leading-relaxed">{config?.longDescription}</p>
-          </div>
-
-          {/* Actions */}
-          {config?.docsUrl && (
-            <div className="flex gap-3">
-              <Button variant="outline" className="rounded-full gap-2">
-                <ExternalLink className="size-4" />
-                {language === "zh" ? "查看文档" : "View Docs"}
-              </Button>
-            </div>
-          )}
+          <p className="text-sm text-muted-foreground mt-1">
+            {description}
+          </p>
         </div>
-      </>
-    )
-  }
+      </div>
 
-  // --- Active / Inactive (toggleable) page ---
-  return (
-    <>
-      <AlertDialog open={showDisableWarning} onOpenChange={setShowDisableWarning}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <div className="flex items-center gap-3 mb-2">
-              <div className="size-10 rounded-full bg-red-100 flex items-center justify-center">
-                <AlertTriangle className="size-5 text-red-600" />
-              </div>
-              <AlertDialogTitle className="text-lg">{t("channel.disableWarningTitle")}</AlertDialogTitle>
-            </div>
-            <AlertDialogDescription className="text-sm text-muted-foreground">
-              {t("channel.disableWarningDesc")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="mt-4">
-            <AlertDialogCancel className="rounded-full">{t("channel.keepEnabled")}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDisable}
-              className="rounded-full bg-red-600 hover:bg-red-700 text-white"
-            >
-              {t("channel.disableAnyway")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <div className="p-6 md:p-10 max-w-5xl mx-auto flex flex-col gap-8">
-        {/* Header */}
-        <div className="flex items-start gap-4">
-          <div className="size-14 rounded-2xl bg-secondary flex items-center justify-center text-2xl shrink-0">
-            {config?.icon ?? "📡"}
-          </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-3 flex-wrap">
-              <h1 className="text-2xl font-semibold text-foreground tracking-tight">{displayName}</h1>
-              <Badge
-                variant={isEnabled ? "default" : "secondary"}
-                className={cn("text-xs", isEnabled ? "bg-green-600 text-white" : "")}
-              >
-                {isEnabled ? t("channel.active") : t("channel.inactive")}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground mt-1">{config?.description}</p>
-          </div>
-          {config?.demoUrl && (
-            <a
-              href={config.demoUrl}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
-            >
-              <ExternalLink className="size-3.5" />
-              {language === "zh" ? "演示" : "Demo"}
-            </a>
-          )}
-        </div>
-
-        {/* Status Toggle */}
-        <div className="rounded-2xl bg-secondary/50 bg-popover p-6">
+      {/* Status Section — Connect with Nohi Agentic Catalog */}
+      {channel.type === "toggleable" ? (
+        <div className="rounded-2xl bg-secondary/50 p-6 flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <span className={cn(
-                "size-2.5 rounded-full",
-                isEnabled ? "bg-green-500" : "bg-muted-foreground/30"
+                "size-2.5 rounded-full shrink-0",
+                isEnabled ? "bg-green-500" : "bg-muted-foreground/40"
               )} />
               <div>
-                <h3 className="text-base font-medium text-foreground">{t("channel.status")}</h3>
+                <h3 className="text-base font-medium text-foreground">
+                  {t("channel.connectAgenticCatalog")}
+                </h3>
                 <p className="text-sm text-muted-foreground mt-0.5">
-                  {t("channel.enableDisable")}
+                  {t("channel.connectAgenticCatalogDesc")}
                 </p>
               </div>
             </div>
@@ -537,73 +298,192 @@ export default function GenericChannelPage() {
                 id="channel-status"
                 checked={isEnabled}
                 onCheckedChange={handleToggle}
-                disabled={!isToggleable}
               />
             </div>
           </div>
-          <p className="text-xs text-muted-foreground mt-4 pt-4 border-t border-border/50">
-            {t("channel.activationNote")}
-          </p>
+          {!isEnabled && (
+            <div className="rounded-xl border border-border bg-background/50 px-4 py-3 text-sm text-muted-foreground">
+              {t("channel.connectAgenticCatalogHint")}
+            </div>
+          )}
         </div>
+      ) : slug === "chatgpt-app" ? (
+        <div className="flex flex-col gap-4">
+          <div className="rounded-2xl bg-secondary/50 p-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <span className={cn(
+                  "size-2.5 rounded-full",
+                  currentStatus === "active" ? "bg-green-500" : 
+                  currentStatus === "inactive" ? "bg-yellow-500" : "bg-red-500"
+                )} />
+                <div>
+                  <h3 className="text-base font-medium text-foreground">{t("channel.channelStatus")}</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {t("channel.enableIntegration")}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Label htmlFor="channel-status" className="text-sm text-muted-foreground">
+                  {isEnabled ? t("channel.enabled") : t("channel.disabled")}
+                </Label>
+                <Switch 
+                  id="channel-status" 
+                  checked={isEnabled}
+                  onCheckedChange={handleToggle}
+                />
+              </div>
+            </div>
+          </div>
 
-        {/* Analytics */}
-        <div className="rounded-2xl bg-secondary/50 bg-popover p-6">
-          <h3 className="text-base font-medium text-foreground mb-1">
-            {language === "zh" ? "渠道分析" : "Channel Analytics"}
-          </h3>
-          <p className="text-sm text-muted-foreground mb-5">
-            {language === "zh" ? "过去 30 天的表现数据。" : "Performance data for the last 30 days."}
+          {isEnabled && (
+            <div className="rounded-2xl bg-secondary/50 p-6">
+              <div className="flex flex-col gap-4">
+                <div>
+                  <h3 className="text-base font-medium text-foreground">{t("channel.appSelection")}</h3>
+                  <p className="text-sm text-muted-foreground mt-0.5">
+                    {t("channel.appSelectionDesc")}
+                  </p>
+                </div>
+                
+                <div className="flex flex-col gap-3">
+                  <div
+                    className={cn(
+                      "rounded-xl border p-4 text-left transition-all",
+                      selectedApp === "custom"
+                        ? "border-foreground ring-1 ring-foreground"
+                        : "border-border hover:border-foreground/30"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedApp("custom")}
+                        className="text-left"
+                      >
+                        <h4 className="text-sm font-medium text-foreground">{t("channel.customApp")}</h4>
+                        <p className="text-xs text-muted-foreground mt-1">{t("channel.customAppDesc")}</p>
+                      </button>
+                      {requestSent ? (
+                        <span className="text-xs text-muted-foreground">{t("common.requestSent")}</span>
+                      ) : (
+                        <Button 
+                          size="sm" 
+                          variant="outline" 
+                          className="rounded-full text-xs"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setRequestSent(true)
+                          }}
+                        >
+                          {t("common.request")}
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled
+                    className="rounded-xl bg-secondary/30 p-4 text-left opacity-50 cursor-not-allowed"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-medium text-foreground">{t("channel.nohiApp")}</h4>
+                        <p className="text-xs text-muted-foreground mt-1">{t("channel.nohiAppDesc")}</p>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{t("channel.coming")}</span>
+                    </div>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-2xl bg-secondary/50 p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className={cn(
+                "size-2.5 rounded-full",
+                isEnabled ? "bg-green-500" : "bg-yellow-500"
+              )} />
+              <div>
+                <h3 className="text-base font-medium text-foreground">{t("channel.channelStatus")}</h3>
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  {t("channel.configureChannel")}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Label htmlFor="channel-status" className="text-sm text-muted-foreground">
+                {isEnabled ? t("channel.enabled") : t("channel.disabled")}
+              </Label>
+              <Switch 
+                id="channel-status" 
+                checked={isEnabled}
+                onCheckedChange={handleToggle}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Features */}
+      <div className="flex flex-col gap-4">
+        <h2 className="text-lg font-semibold text-foreground">{t("channel.features")}</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {features.map((feature) => (
+            <div
+              key={feature}
+              className="rounded-xl bg-secondary/30 p-4"
+            >
+              <span className="text-sm text-foreground">{feature}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Analytics Preview - hide for google-ai */}
+      {slug !== "google-ai" && (
+        <div className="rounded-2xl bg-secondary/50 p-6">
+          <h3 className="text-base font-medium text-foreground">{t("channel.channelAnalytics")}</h3>
+          <p className="text-sm text-muted-foreground mt-0.5 mb-4">
+            {t("channel.performanceMetrics")}
           </p>
-          <div className="grid grid-cols-3 gap-6">
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-wide">
-                <TrendingUp className="size-3.5" />
-                {language === "zh" ? "曝光量" : "Impressions"}
-              </div>
-              <span className="text-2xl font-semibold text-foreground tabular-nums">
-                {config?.analytics.impressions ?? "—"}
+          <div className="grid grid-cols-3 gap-4">
+            <div className="flex flex-col">
+              <span className="text-xs text-muted-foreground uppercase tracking-wide">{t("channel.views")}</span>
+              <span className="text-2xl font-semibold text-foreground tabular-nums mt-1">
+                {isActive ? "1,247" : "—"}
               </span>
             </div>
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-wide">
-                <MousePointerClick className="size-3.5" />
-                {language === "zh" ? "点击量" : "Clicks"}
-              </div>
-              <span className="text-2xl font-semibold text-foreground tabular-nums">
-                {config?.analytics.clicks ?? "—"}
+            <div className="flex flex-col">
+              <span className="text-xs text-muted-foreground uppercase tracking-wide">{t("channel.orders")}</span>
+              <span className="text-2xl font-semibold text-foreground tabular-nums mt-1">
+                {isActive ? "42" : "—"}
               </span>
             </div>
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground uppercase tracking-wide">
-                <ShoppingCart className="size-3.5" />
-                {language === "zh" ? "转化数" : "Conversions"}
-              </div>
-              <span className="text-2xl font-semibold text-foreground tabular-nums">
-                {config?.analytics.conversions ?? "—"}
+            <div className="flex flex-col">
+              <span className="text-xs text-muted-foreground uppercase tracking-wide">{t("channel.revenue")}</span>
+              <span className="text-2xl font-semibold text-foreground tabular-nums mt-1">
+                {isActive ? "$3,420" : "—"}
               </span>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Description */}
-        <div className="rounded-2xl bg-secondary/50 bg-popover p-6">
-          <h3 className="text-base font-medium text-foreground mb-2">
-            {language === "zh" ? "关于此渠道" : "About This Channel"}
-          </h3>
-          <p className="text-sm text-muted-foreground leading-relaxed">{config?.longDescription}</p>
-        </div>
-
-        {/* Actions */}
-        <div className="flex gap-3">
-          <Button className="rounded-full">{t("common.save")}</Button>
-          {config?.docsUrl && (
-            <Button variant="outline" className="rounded-full gap-2">
-              <ExternalLink className="size-4" />
-              {language === "zh" ? "查看文档" : "View Docs"}
-            </Button>
-          )}
-        </div>
+      {/* Actions */}
+      <div className="flex gap-3">
+        <Button className="rounded-full">
+          {t("channel.saveChanges")}
+        </Button>
+        <Button variant="outline" className="rounded-full">
+          {t("channel.viewDocs")}
+        </Button>
       </div>
-    </>
+    </div>
   )
 }

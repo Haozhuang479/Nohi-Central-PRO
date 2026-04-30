@@ -1,3 +1,4 @@
+
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { ChevronDown, Copy } from "lucide-react"
@@ -98,7 +99,7 @@ export default function NohiCategoriesPage() {
           onClick={() => setShowAll(true)}
           className="w-fit rounded-full"
         >
-          {language === "zh"
+          {language === "zh" 
             ? `显示更多 ${categories.length - 8} 个品类`
             : `Show ${categories.length - 8} More Categories`}
           <ChevronDown className="size-4 ml-1" />
